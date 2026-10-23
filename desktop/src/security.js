@@ -57,15 +57,25 @@ const pemFromDer = der => `-----BEGIN CERTIFICATE-----\n${Buffer.from(der).toStr
  */
 async function loadOrCreateCert(dir, { seal, unseal, hostnames = [], ips = [] } = {}) {
   const certPath = path.join(dir, 'cert.pem'), keyPath = path.join(dir, 'key.pem'), sealedPath = path.join(dir, 'key.sealed');
+  let why = 'no certificate yet';
   try {
     const cert = fs.readFileSync(certPath, 'utf8');
+    why = 'its key could not be read';
     let key = null;
     if (fs.existsSync(sealedPath) && unseal) key = unseal(fs.readFileSync(sealedPath, 'utf8'));
     else if (fs.existsSync(keyPath)) key = fs.readFileSync(keyPath, 'utf8');
-    if (key && new Date(new crypto.X509Certificate(cert).validTo) > new Date(Date.now() + 30 * 86400e3)) {
+    why = key ? 'it is about to expire' : 'its key is missing or sealed by another Windows user';
+    if (key &&new Date(new crypto.X509Certificate(cert).validTo) > new Date(Date.now() + 30 * 86400e3)) {
       return { cert, key, fingerprint: fingerprintOfPem(cert) };
     }
-  } catch { /* none yet, or unreadable: make a new one */ }
+  } catch (e) { if (e && e.code !== 'ENOENT') why = `the old one could not be read (${e.code || e.message})`; }
+
+  // Every computer that joined trusts exactly one certificate, so replacing it disconnects them all until they are re-joined.
+  // That must never happen silently: keep the old one and say so in the log.
+  if (why !== 'no certificate yet') {
+    try { fs.copyFileSync(certPath, path.join(dir, `cert.replaced-${Date.now()}.pem`)); } catch { /* nothing to keep */ }
+    try { require('./util').log(`security certificate replaced because ${why}: computers that joined this one must reconnect`); } catch { /* logging is best-effort */ }
+  }
 
   const selfsigned = require('selfsigned');
   const altNames = [{ type: 2, value: 'localhost' }, { type: 7, ip: '127.0.0.1' }];

@@ -3,6 +3,7 @@
 const fs = require('fs'), os = require('os'), path = require('path'), https = require('https'), http = require('http');
 process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0';    // the test's own fetch() calls talk to self-signed certificates (the app's pinned connections force verification on regardless)
 process.env.ARTEMA_DEFAULT_PORT = '18099';      // keep discovery away from a real Portal that may be running on 8080
+process.env.ARTEMA_UDP_PORT = '41298';          // ...and from one answering the broadcast shout
 const { Core } = require('../src/core');
 
 const T = fs.mkdtempSync(path.join(os.tmpdir(), 'artema-node-e2e-'));

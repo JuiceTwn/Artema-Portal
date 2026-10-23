@@ -3,7 +3,7 @@ const dgram = require('dgram');
 const os = require('os');
 const { APP_NAME } = require('./util');
 
-const UDP_PORT = 41234;
+const UDP_PORT = parseInt(process.env.ARTEMA_UDP_PORT, 10) || 41234;     // env override is for automated tests, so they never hear a real Portal
 
 function broadcastAddrs() {
   const out = new Set(['255.255.255.255']);

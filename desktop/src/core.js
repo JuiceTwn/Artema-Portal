@@ -6,7 +6,7 @@ const path = require('path');
 const http = require('http');
 const {
   APP_NAME, VERSION, HttpError, readJson, writeJson, cleanName, lanIp, request, readAll, peerCertPem, TLS_IDENTITY_ERRORS,
-  jsonRequest, sendJson, readBody, serveStatic, sendError, guardRequest, log,
+  jsonRequest, sendJson, readBody, serveStatic, sendError, guardRequest, log, sleep,
 } = require('./util');
 const {
   genPin, normPin, prettyPin, joinProof, fingerprintOfPem, loadOrCreateCert, COOKIE, LOCAL_HEADERS,
@@ -247,16 +247,23 @@ class Core {
     if (!found.length) return { action: 'none', hostname: os.hostname() };
     if (!normPin(pin)) return { action: 'needs-pin', host: found[0].name, address: found[0].address };       // the one question: the PIN on the main computer
     const base = os.hostname().replace(/[^\w .-]/g, '').slice(0, 34) || 'Computer';
-    for (let n = 1; n <= 9; n++) {
-      const name = n === 1 ? base : `${base}-${n}`;
-      try {
-        const r = await this.join(found[0].address, name, pin);
-        return { action: 'joined', name, ...r };
-      } catch (e) {
-        if (!/already uses that name/.test(e.message)) throw e;
+    // More than one main computer can answer (an old copy, a test setup, a second office). The PIN belongs to exactly one of them,
+    // and it is only ever sent as a proof bound to that machine's certificate, so offer it to each in turn.
+    let failure = null;
+    for (const h of found) {
+      for (let n = 1; n <= 9; n++) {
+        const name = n === 1 ? base : `${base}-${n}`;
+        try {
+          const r = await this.join(h.address, name, pin);
+          return { action: 'joined', name, ...r };
+        } catch (e) {
+          if (/already uses that name/.test(e.message) && n < 9) continue;
+          failure = (e.wrongPin ? failure && !failure.wrongPin ? failure : e : failure || e);      // a real problem outranks "wrong PIN" from the other machines
+          break;
+        }
       }
     }
-    throw new HttpError(400, 'Could not find a free name for this computer');
+    throw failure || new HttpError(400, 'Could not find a free name for this computer');
   }
 
   async scan(port) {
@@ -302,26 +309,35 @@ class Core {
     name = cleanName(name, 41);
     if (!name || name.length > 40) throw new HttpError(400, 'Give this computer a name');
     if (!normPin(pin)) throw new HttpError(400, 'Enter the PIN shown on the main computer');
-    const host = await this.probe(addr);
-    if (!host) {
-      if (await this.isOlderMain(addr)) throw new HttpError(400, 'That main computer is running an older version of Artema Portal. Update it first.');
-      throw new HttpError(400, "Couldn't find the main computer at that address");
-    }
-    const url = `https://${host.address}`;
-    const oldId = this.cfg.host_id && host.id && this.cfg.host_id === host.id ? this.cfg.device_id : undefined;
-    let reg;
-    try {
-      // The proof is bound to the certificate we just saw, and the request only goes through if it is still that same certificate.
-      reg = await jsonRequest('POST', url + '/api/register', {
-        headers: { 'Content-Type': 'application/json', 'X-Device': encodeURIComponent(name) },
-        body: Buffer.from(JSON.stringify({ name, id: oldId, tag: guessTag(name), proof: joinProof(pin, host.fp) })), timeout: 8000, ca: host.pem,
-      });
-    } catch (e) {
-      if (e.status === 409) throw new HttpError(400, 'Another computer already uses that name. Pick a different one.');
-      if (e.status === 403) throw new HttpError(400, "That PIN isn't right. Check the PIN shown on the main computer.");
-      if (e.status === 429) throw new HttpError(400, e.message);
-      if (TLS_IDENTITY_ERRORS.has(e.code)) throw new HttpError(400, "The main computer's security certificate changed while connecting. Try again.");
-      throw new HttpError(400, 'The main computer refused the connection');
+    let host, url, reg;
+    // A main computer that restarts with a new certificate between our look at it and the PIN step is retried once: the proof is
+    // bound to whichever certificate we saw last, so a second look is as safe as the first.
+    for (let attempt = 1; ; attempt++) {
+      host = await this.probe(addr);
+      if (!host) {
+        if (await this.isOlderMain(addr)) throw new HttpError(400, 'That main computer is running an older version of Artema Portal. Update it first.');
+        throw new HttpError(400, "Couldn't find the main computer at that address");
+      }
+      url = `https://${host.address}`;
+      const oldId = this.cfg.host_id && host.id && this.cfg.host_id === host.id ? this.cfg.device_id : undefined;
+      try {
+        // The proof is bound to the certificate we just saw, and the request only goes through if it is still that same certificate.
+        reg = await jsonRequest('POST', url + '/api/register', {
+          headers: { 'Content-Type': 'application/json', 'X-Device': encodeURIComponent(name) },
+          body: Buffer.from(JSON.stringify({ name, id: oldId, tag: guessTag(name), proof: joinProof(pin, host.fp) })), timeout: 8000, ca: host.pem,
+        });
+        break;
+      } catch (e) {
+        if (e.status === 409) throw new HttpError(400, 'Another computer already uses that name. Pick a different one.');
+        if (e.status === 403) throw Object.assign(new HttpError(400, "That PIN isn't right. Check the PIN shown on the main computer."), { wrongPin: true });
+        if (e.status === 429) throw new HttpError(400, e.message);
+        if (TLS_IDENTITY_ERRORS.has(e.code)) {
+          log(`join: certificate changed while connecting to ${host.address} (attempt ${attempt})`);
+          if (attempt < 2) { await sleep(1500); continue; }
+          throw new HttpError(400, "The main computer's security certificate keeps changing. Close and reopen Artema Portal on the main computer, then try again.");
+        }
+        throw new HttpError(400, 'The main computer refused the connection');
+      }
     }
     await this.stopRole();
     this.saveCfg(this.withSecret({ role: 'client', name, host_url: url, host_id: host.id || '', host_cert: host.pem, device_id: reg.id, folder: path.join(this.desktopDir, APP_NAME) }, 'device_token', reg.token));

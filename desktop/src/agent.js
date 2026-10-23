@@ -214,7 +214,7 @@ class Agent {
           } else if (TLS_IDENTITY_ERRORS.has(e.code) || e.code === 'CERT_MISMATCH') {
             this.offlineSince = this.offlineSince || Date.now();
             log(`certificate check failed (${e.code}) for ${this.url}`);
-            Object.assign(this.status, { state: 'offline', message: "Stopped: the main computer's security certificate isn't the one this computer trusts" });
+            Object.assign(this.status, { state: 'offline', message: "The main computer's security certificate was replaced (it was reinstalled or reset). Reconnect this computer from Setup and status with the PIN shown on the main computer." });
           } else if (NET_ERRORS.has(e.code) || e.message === 'timeout' || e.code === 'WRONG_HOST') {
             this.offlineSince = this.offlineSince || Date.now();
             Object.assign(this.status, { state: 'offline', message: e.code === 'WRONG_HOST' ? "That isn't the main computer any more" : "Can't reach the main computer" });
