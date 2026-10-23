@@ -302,7 +302,7 @@ const touch = (p, ageSec) => { const t = Date.now() / 1000 - ageSec; fs.utimesSy
     check('...and neither can a joined computer', bearerAdm === 403, bearerAdm);
 
     // a joined computer syncs with its token; removing it locks it out; its files stay
-    const cs = mk('sec-c1', null); extra.push(cs); await cs.startLocalServer(0);
+    const cs = mk('sec-c1'); extra.push(cs); await cs.startLocalServer(0);
     r = await cs.join('127.0.0.1:18110', 'Sec Client', 'WRONG-WRONG').then(() => 'joined', e => e.message);
     check('joining with the wrong PIN gives a plain message', /PIN/.test(r), r);
     await cs.join('127.0.0.1:18110', 'Sec Client', hs.getPin());
@@ -320,7 +320,7 @@ const touch = (p, ageSec) => { const t = Date.now() / 1000 - ageSec; fs.utimesSy
     check('a removed computer is told so, and keeps its files', await wait(() => /no longer/.test(cs.agent.status.message), 20) && ex(path.join(csDir, 'note.txt')), cs.agent.status);
 
     // a new PIN: old one dead, browsers sign in again, computers stay
-    const csb = mk('sec-c2', null); extra.push(csb); await csb.startLocalServer(0);
+    const csb = mk('sec-c2'); extra.push(csb); await csb.startLocalServer(0);
     await csb.join('127.0.0.1:18110', 'Sec Client B', hs.getPin());
     const oldPin = hs.getPin();
     hs.trustLoopback = true; r = await (await post(S, '/api/pin/rotate', {})).json(); hs.trustLoopback = false;
@@ -346,10 +346,11 @@ const touch = (p, ageSec) => { const t = Date.now() / 1000 - ageSec; fs.utimesSy
     // a main computer from before encryption is recognised, not just "not found"
     const oldMain = http.createServer((q, a) => { a.setHeader('Content-Type', 'application/json'); a.end(JSON.stringify({ app: 'Artema Portal', name: 'Old Main' })); });
     await new Promise(res => oldMain.listen(18112, '127.0.0.1', res));
-    const co = mk('sec-c3', null); extra.push(co); await co.startLocalServer(0);
+    const co = mk('sec-c3'); extra.push(co); await co.startLocalServer(0);
     r = await co.join('127.0.0.1:18112', 'New PC', 'ABCDE-FGHJK').then(() => 'joined', e => e.message);
     check('joining a main computer that has not been updated explains what to do', /older version/.test(r), r);
     oldMain.close();
+
 
   } catch (e) { console.log('TEST CRASH', e); fails.push('crash'); }
   for (const c of [host, c1, c2, ...extra]) await c.shutdown().catch(() => { });
