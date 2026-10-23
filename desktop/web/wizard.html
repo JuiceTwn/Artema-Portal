@@ -53,6 +53,8 @@
   .back { display: block; margin: 22px auto 0; background: none; border: 0; color: var(--muted); font-size: 13px; } .back:hover { color: var(--text); }
   .foot { text-align: center; color: var(--faint); font-size: 12px; margin-top: 48px; }
   svg.i { width: 18px; height: 18px; stroke: currentColor; fill: none; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
+  /* the server build is always the main computer and the client build never is: neither is asked which one it is */
+  body[data-edition="client"] #pick-host, body[data-edition="server"] .choices { display: none; }
 </style>
 </head>
 <body>
@@ -286,7 +288,10 @@ async function paintHome() {
   const st = state.status || {};
   $('#home-dot').className = 'dot ' + (st.state === 'ok' ? '' : st.state === 'offline' ? 'off' : 'warn');
   $('#home-status').textContent = host ? `Serving files${state.devices ? ` · ${state.devices} computer${state.devices === 1 ? '' : 's'} connected` : ''}` : `${st.message || ''}${st.files ? ` · ${st.files} file${st.files === 1 ? '' : 's'}` : ''}`;
-  const warn = $('#home-warn'); warn.style.display = state.conflict ? '' : 'none'; if (state.conflict) warn.textContent = `Another main computer, “${state.conflict.name}” (${state.conflict.address}), is on this network. Pick one to keep, then disconnect the other.`;
+  const warn = $('#home-warn'); warn.style.display = state.conflict || state.error ? '' : 'none';
+  if (state.error) warn.textContent = state.error;
+  else if (state.conflict) warn.textContent = `Another main computer, “${state.conflict.name}” (${state.conflict.address}), is on this network. Pick one to keep, then disconnect the other.`;
+  $('#home-reset').style.display = state.edition === 'server' && !state.error ? 'none' : '';
   $('#home-extra').innerHTML = host ? `<div class="big-addr"><small>PIN for adding computers</small><code>${esc(state.pin || '')}</code></div><div class="big-addr" style="margin-top:12px"><small>Address of this computer</small><code>${esc(state.address)}</code></div><button class="back" id="rotate-pin" style="margin-top:14px">Make a new PIN</button>` : '';
 }
 $('#home-extra').addEventListener('click', async e => {
@@ -306,6 +311,7 @@ async function autoStart() {
       $('#pin-lead').textContent = `Found ${r.host}. Its PIN is on that computer, under Setup and status.`;
       show('s-pin', false); return;
     }
+    if (state.edition === 'client') { show('s-find', false); scan(); return; }          // this build never becomes the main computer: keep looking for one
     firstCountdown(r.hostname);
   } catch (e) { show('s-welcome', false); }
 }
@@ -338,8 +344,10 @@ $('#first-cancel').onclick = () => { clearInterval(firstTimer); show('s-welcome'
 $('#auto-manual').onclick = () => show('s-welcome', false);
 (async () => {
   state = await api('state');
+  document.body.dataset.edition = state.edition || 'any';
+  if (state.configured) { show('s-home', false); await paintHome(); setInterval(paintHome, 2500); return; }
   if (state.error) { const w = $('#welcome-err'); w.textContent = state.error; w.style.display = ''; show('s-welcome', false); return; }
-  if (state.configured) { show('s-home', false); await paintHome(); setInterval(paintHome, 2500); } else autoStart();
+  autoStart();
 })();
 </script>
 </body>

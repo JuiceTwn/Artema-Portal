@@ -6,12 +6,18 @@ const { execFile } = require('child_process');
 const { Core } = require('./src/core');
 const { setLogFile, log } = require('./src/util');
 
-const APP_ID = 'com.artema.portal';
+// Which build this is is decided when it is built (package.json "artemaEdition"), never by anything the app finds at run time:
+// the server build is always the main computer, the client build never is. ARTEMA_EDITION is for running from source.
+const EDITION = ['server', 'client'].find(e => e === (process.env.ARTEMA_EDITION || require('./package.json').artemaEdition)) || 'any';
+const IS_SERVER = EDITION === 'server';
+const APP_NAME = IS_SERVER ? 'Artema Portal Server' : 'Artema Portal';
+const APP_ID = IS_SERVER ? 'com.artema.portal.server' : 'com.artema.portal';
 const TITLEBAR = 36;
 const BACKGROUND = process.argv.includes('--background');
-app.setName('Artema Portal');
+app.setName(APP_NAME);
 app.setAppUserModelId(APP_ID);
-if (process.env.ARTEMA_DATA) app.setPath('userData', process.env.ARTEMA_DATA);
+// Each edition keeps its own settings, so installing or updating one can never touch the other's identity, PIN or certificate.
+app.setPath('userData', process.env.ARTEMA_DATA || path.join(app.getPath('appData'), APP_NAME));
 
 // A stray error in one transfer must never pop a blocking dialog on an unattended machine.
 process.on('uncaughtException', e => log('uncaught: ' + (e && e.stack || e)));
@@ -128,13 +134,13 @@ async function quit() {
 // ---- self-install
 // The download is a plain folder. The first time it runs it copies itself to a permanent place, adds Start menu and
 // Desktop shortcuts, and relaunches from there, so the downloaded folder can be deleted afterwards.
-function installDir() { return process.env.ARTEMA_INSTALL_DIR || path.join(process.env.LOCALAPPDATA || app.getPath('appData'), 'Programs', 'Artema Portal Desktop'); }   // not "Artema Portal": the old Python version used that folder
+function installDir() { return process.env.ARTEMA_INSTALL_DIR || path.join(process.env.LOCALAPPDATA || app.getPath('appData'), 'Programs', IS_SERVER ? 'Artema Portal Server' : 'Artema Portal Desktop'); }   // not "Artema Portal": the old Python version used that folder
 
 function makeShortcuts(exe) {
   if (process.env.ARTEMA_NO_SHORTCUTS) return;
-  const opts = { target: exe, cwd: path.dirname(exe), icon: path.join(path.dirname(exe), 'resources', 'app', 'assets', 'icon.ico'), iconIndex: 0, description: 'Artema Portal', appUserModelId: APP_ID };
-  const places = [path.join(app.getPath('desktop'), 'Artema Portal.lnk'),
-    path.join(app.getPath('appData'), 'Microsoft', 'Windows', 'Start Menu', 'Programs', 'Artema Portal.lnk')];
+  const opts = { target: exe, cwd: path.dirname(exe), icon: path.join(path.dirname(exe), 'resources', 'app', 'assets', 'icon.ico'), iconIndex: 0, description: APP_NAME, appUserModelId: APP_ID };
+  const places = [path.join(app.getPath('desktop'), `${APP_NAME}.lnk`),
+    path.join(app.getPath('appData'), 'Microsoft', 'Windows', 'Start Menu', 'Programs', `${APP_NAME}.lnk`)];
   for (const p of places) { try { shell.writeShortcutLink(p, 'create', opts); } catch (e) { log('shortcut failed: ' + e.message); } }
 }
 
@@ -202,11 +208,12 @@ if (!app.requestSingleInstanceLock()) {
     if (await ensureInstalled()) return;
     core = new Core({
       dataDir: app.getPath('userData'), webDir: path.join(__dirname, 'web'),
-      desktopDir: process.env.ARTEMA_DESKTOP || app.getPath('desktop'), hooks,
+      desktopDir: process.env.ARTEMA_DESKTOP || app.getPath('desktop'), hooks, edition: EDITION,
     });
     await core.startLocalServer(parseInt(process.env.ARTEMA_LOCAL_PORT, 10) || 0);   // env switches are for automated tests only
     await core.startRole();
-    log(`started v${app.getVersion()} role=${core.cfg.role || 'none'}`);
+    await core.ensureServer();          // the server build needs no setup: it simply becomes the main computer
+    log(`started v${app.getVersion()} edition=${EDITION} role=${core.cfg.role || 'none'}`);
     createTray();
     if (core.configured) applyLoginItem(true);
     if (process.env.ARTEMA_NO_WINDOW) return;

@@ -39,7 +39,14 @@ function normAddr(addr) {
  * and answers the setup wizard. Platform bits (tray, startup, notifications) come in through `hooks`.
  */
 class Core {
-  constructor({ dataDir, webDir, desktopDir, hooks = {} }) {
+  /**
+   * `edition` is fixed by the build, never by anything on disk or on the network:
+   *   'server' - always the main computer, sets itself up, can never join another one
+   *   'client' - always a connecting computer, can never become the main computer
+   *   'any'    - development and tests only: either, chosen in the wizard
+   */
+  constructor({ dataDir, webDir, desktopDir, hooks = {}, edition = 'any' }) {
+    this.edition = edition;
     this.dataDir = dataDir;
     this.webDir = webDir;
     this.desktopDir = desktopDir;
@@ -105,8 +112,24 @@ class Core {
   localUrl(p = '/') { return `http://127.0.0.1:${this.localPort}${p}`; }
 
   // ---- lifecycle
+  /** Why this build can't run the role saved in its settings (settings left by another kind of build), or ''. */
+  roleConflict() {
+    if (this.edition === 'client' && this.cfg.role === 'host') return 'This is the connecting-computer version of Artema Portal, but its settings are for the main computer. Install the server version on the main computer, and reset this one from Setup and status.';
+    if (this.edition === 'server' && this.cfg.role === 'client') return 'This is the server version of Artema Portal, but its settings are for a connecting computer. Reset it from Setup and status.';
+    return '';
+  }
+
+  /** The server build needs no wizard: with nothing set up yet it becomes the main computer, on the first free port from the default. */
+  async ensureServer() {
+    if (this.edition !== 'server' || this.configured || this.startError) return;
+    const name = (os.hostname().replace(/[^\w .-]/g, '').slice(0, 40)) || 'Main computer';
+    try { await this.setupHost(name, DEFAULT_PORT, true); } catch (e) { this.startError = String(e.message || e); log(`server setup failed: ${e && e.stack || e}`); }
+  }
+
   async startRole() {
     this.startError = '';
+    const conflict = this.roleConflict();
+    if (conflict) { this.startError = conflict; return; }
     try {
       if (this.cfg.role === 'host') {
         if (!this.cfg.instance_id) this.saveCfg({ ...this.cfg, instance_id: crypto.randomBytes(8).toString('hex') });
@@ -187,7 +210,7 @@ class Core {
   // ---- wizard actions
   state() {
     const s = {
-      configured: this.configured, role: this.cfg.role || null, name: this.cfg.name || '', hostname: os.hostname(),
+      edition: this.edition, configured: this.configured, role: this.cfg.role || null, name: this.cfg.name || '', hostname: os.hostname(),
       default_port: DEFAULT_PORT, lan_ip: lanIp(), folder: this.folder, portal_url: this.portalUrl(), error: this.startError, version: VERSION,
       conflict: this.conflict,
     };
@@ -243,6 +266,7 @@ class Core {
    */
   async autoSetup(pin) {
     if (this.configured) return { action: 'already', portal_url: this.portalUrl() };
+    if (this.edition === 'server') throw new HttpError(400, "This is the server version of Artema Portal. It is the main computer and can't connect to another one.");
     const found = await this.discover();
     if (!found.length) return { action: 'none', hostname: os.hostname() };
     if (!normPin(pin)) return { action: 'needs-pin', host: found[0].name, address: found[0].address };       // the one question: the PIN on the main computer
@@ -284,6 +308,7 @@ class Core {
   }
 
   async setupHost(name, port, auto = false) {
+    if (this.edition === 'client') throw new HttpError(400, "This version of Artema Portal can't be the main computer. Install the server version on the main computer.");
     name = cleanName(name, 41);
     if (!name || name.length > 40) throw new HttpError(400, 'Give this computer a name');
     if (!(port >= 1024 && port <= 65535)) throw new HttpError(400, 'Pick a port between 1024 and 65535');
@@ -306,6 +331,7 @@ class Core {
   }
 
   async join(addr, name, pin) {
+    if (this.edition === 'server') throw new HttpError(400, "This is the server version of Artema Portal. It is the main computer and can't connect to another one.");
     name = cleanName(name, 41);
     if (!name || name.length > 40) throw new HttpError(400, 'Give this computer a name');
     if (!normPin(pin)) throw new HttpError(400, 'Enter the PIN shown on the main computer');

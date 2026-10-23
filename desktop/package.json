@@ -8,8 +8,10 @@
   "private": true,
   "scripts": {
     "start": "electron .",
-    "test": "node scripts/e2e.js && node scripts/e2e-cert.js",
-    "dist": "electron-builder --win zip"
+    "test": "node scripts/e2e.js && node scripts/e2e-cert.js && node scripts/e2e-edition.js",
+    "dist": "node scripts/dist.js all",
+    "dist:server": "node scripts/dist.js server",
+    "dist:client": "node scripts/dist.js client"
   },
   "build": {
     "appId": "com.artema.portal",

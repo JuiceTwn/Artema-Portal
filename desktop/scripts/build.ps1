@@ -11,5 +11,5 @@ $env:CSC_IDENTITY_AUTO_DISCOVERY = 'false'
 npm run dist
 if ($LASTEXITCODE -ne 0) { throw 'build failed' }
 New-Item -ItemType Directory (Join-Path $src 'dist') -Force | Out-Null
-Copy-Item (Join-Path $work 'dist\*.zip') (Join-Path $src 'dist') -Force
+Copy-Item (Join-Path $work 'dist\*\*.zip') (Join-Path $src 'dist') -Force
 Write-Host "Package: $(Join-Path $src 'dist')"
