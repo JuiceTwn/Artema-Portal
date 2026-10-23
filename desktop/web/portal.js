@@ -12,16 +12,39 @@
 
   // ---------- api ----------
   const hdrs = () => ({ 'X-Device': encodeURIComponent(S.who || 'Someone') });
-  async function api(path, body) {
+  async function api(path, body, retried) {
     const opt = body === undefined ? { headers: hdrs() } :
       { method: 'POST', headers: { ...hdrs(), 'Content-Type': 'application/json' }, body: JSON.stringify(body) };
     const r = await fetch('/api/' + path, opt);
     const data = await r.json().catch(() => ({}));
+    if (r.status === 401 && !retried) { await login(); return api(path, body, true); }
     if (!r.ok) throw new Error(data.error || 'Something went wrong');
     return data;
   }
+
+  // ---------- signing in (browsers; computers that joined carry their own sign-in, and the main computer needs none) ----------
+  let loginPromise = null, loginPausedUntil = 0;
+  function login() {
+    if (Date.now() < loginPausedUntil) return Promise.reject(new Error('Sign-in needed'));
+    if (!loginPromise) {
+      loginPromise = (async () => {
+        for (;;) {
+          const pin = await ask({ title: 'Enter the PIN', text: 'The PIN is shown on the main computer, under Setup and status. Ask whoever looks after the Portal.', value: '', ok: 'Sign in' });
+          if (pin === null) { loginPausedUntil = Date.now() + 30000; throw new Error('Sign-in needed'); }
+          const r = await fetch('/api/register', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Device': encodeURIComponent(S.who || 'Guest') }, body: JSON.stringify({ web: true, name: S.who || 'Guest', pin }) });
+          if (r.ok) return;
+          const d = await r.json().catch(() => ({}));
+          toast(d.error || "That PIN isn't right", true);
+        }
+      })().finally(() => { loginPromise = null; });
+    }
+    return loginPromise;
+  }
   const q = p => encodeURIComponent(p);
   const fileUrl = (p, inline) => `/api/file?path=${q(p)}${inline ? '&inline=1' : ''}`;
+
+  // a picture that can't load just falls back to its label (done here because the page's security policy forbids inline handlers)
+  document.addEventListener('error', e => { const t = e.target; if (t && t.tagName === 'IMG' && t.closest && t.closest('.tile.img')) t.remove(); }, true);
 
   // ---------- formatting ----------
   const fmtSize = n => n < 1024 ? n + ' B' : n < 1048576 ? (n / 1024).toFixed(n < 10240 ? 1 : 0) + ' KB' : n < 1073741824 ? (n / 1048576).toFixed(1) + ' MB' : (n / 1073741824).toFixed(1) + ' GB';
@@ -45,7 +68,7 @@
   function tile(it, big) {
     if (it.dir) return `<div class="tile folder">${icon('folder')}</div>`;
     const k = kindOf(it.name), e = ext(it.name).slice(0, 4).toUpperCase() || 'FILE';
-    if (k === 'img') return `<div class="tile img">${big ? '' : `<img loading="lazy" src="${fileUrl(it.path, true)}" alt="" onerror="this.remove()">`}${e}</div>`;
+    if (k === 'img') return `<div class="tile img">${big ? '' : `<img loading="lazy" src="${fileUrl(it.path, true)}" alt="">`}${e}</div>`;
     return `<div class="tile ${k}">${e}</div>`;
   }
   const initials = n => n.trim().split(/\s+/).map(w => w[0]).slice(0, 2).join('').toUpperCase() || '?';
@@ -331,25 +354,34 @@
   // ---------- computers ----------
   async function loadComputers() {
     const { devices, address } = await api('devices');
+    const admin = !!S.info?.local;            // adding, tagging and removing computers is done at the main computer
     $('#pc-count').textContent = devices.length;
     const cards = devices.map(d => `
       <div class="card"><div class="top-line"><div class="pc">${icon('monitor')}</div>
         <div><h3>${esc(d.name)}</h3>${d.tag ? `<span class="tagchip">${esc(d.tag)}</span>` : ''}<div class="state"><span class="dot ${d.online ? '' : 'idle'}"></span>${d.online ? 'Online' : d.last ? 'Seen ' + ago(d.last) : 'Offline'}</div></div>
         ${d.host ? '<span class="badge">Main</span>' : ''}</div>
-        ${d.host ? '' : `<div class="pair2"><button class="btn" data-tag="${esc(d.id)}" data-cur="${esc(d.tag || '')}">${icon('pencil')}Tag</button><button class="btn danger" data-rm="${esc(d.id)}" data-name="${esc(d.name)}">${icon('trash')}Remove</button></div>`}</div>`).join('');
+        ${d.host || !admin ? '' : `<div class="pair2"><button class="btn" data-tag="${esc(d.id)}" data-cur="${esc(d.tag || '')}">${icon('pencil')}Tag</button><button class="btn danger" data-rm="${esc(d.id)}" data-name="${esc(d.name)}">${icon('trash')}Remove</button></div>`}</div>`).join('');
+    let pin = '';
+    if (admin) { try { pin = (await api('pin')).pin; } catch { /* shown next time */ } }
     const addCard = `
       <div class="card add"><h3>Add a computer</h3>
         <div class="addr"><code id="addr">${esc(address)}</code><button class="btn" id="copy-addr">${icon('copy')}Copy</button></div>
-        <ol><li>On the new computer, open <b>Start Artema Portal</b>.</li><li>Choose <b>Connect to the main computer</b>.</li><li>It finds this one automatically, or type the address above.</li></ol></div>`;
+        ${pin ? `<div class="addr" style="margin-top:10px"><code id="pin">${esc(pin)}</code><button class="btn" id="new-pin">New PIN</button></div>` : ''}
+        <ol><li>On the new computer, open <b>Start Artema Portal</b>.</li><li>Choose <b>Connect to the main computer</b>.</li><li>It finds this one automatically${pin ? '. Enter the PIN above when it asks' : ', then asks for the PIN shown on the main computer'}.</li></ol></div>`;
     $('#cards').innerHTML = cards + addCard;
     $('#copy-addr').onclick = async () => { try { await navigator.clipboard.writeText(address); toast('Address copied'); } catch { toast(address); } };
+    if ($('#new-pin')) $('#new-pin').onclick = async () => {
+      if (await ask({ title: 'Make a new PIN?', text: 'Computers that are already connected keep working. The old PIN stops working, and anyone signed in through a web browser will need the new one.', ok: 'New PIN', danger: true })) {
+        try { await api('pin/rotate', {}); loadComputers(); } catch (e) { toast(e.message, true); }
+      }
+    };
     $$('[data-tag]').forEach(b => b.onclick = async () => {
       const v = await ask({ title: 'Tag this computer', text: 'A short label like CNC, Office or Edgebander.', value: b.dataset.cur, ok: 'Save' });
       if (v !== null) { try { await api('devices/tag', { id: b.dataset.tag, tag: v }); loadComputers(); } catch (e) { toast(e.message, true); } }
     });
     $$('[data-rm]').forEach(b => b.onclick = async () => {
       if (await ask({ title: `Remove ${b.dataset.name}?`, text: 'That computer will stop syncing until it connects again.', ok: 'Remove', danger: true })) {
-        await api('devices/remove', { id: b.dataset.rm }); loadComputers();
+        try { await api('devices/remove', { id: b.dataset.rm }); loadComputers(); } catch (e) { toast(e.message, true); }
       }
     });
   }
@@ -374,6 +406,7 @@
   (async () => {
     try { S.info = await api('info'); } catch { setConn(false); }
     await initWho();
+    try { await api('me'); S.info = await api('info'); } catch { setConn(false); }          // signs in first if this browser has to
     api('devices').then(d => $('#pc-count').textContent = d.devices.length).catch(() => { });
     loadQuick();
     refresh(true);

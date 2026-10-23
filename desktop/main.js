@@ -1,5 +1,5 @@
 'use strict';
-const { app, BrowserWindow, Tray, Menu, Notification, shell, nativeImage } = require('electron');
+const { app, BrowserWindow, Tray, Menu, Notification, shell, nativeImage, safeStorage, session } = require('electron');
 const fs = require('fs');
 const path = require('path');
 const { execFile } = require('child_process');
@@ -32,12 +32,29 @@ function notify(title, body) {
 const isOurs = url => {
   try {
     const u = new URL(url);
-    if (u.protocol !== 'http:') return false;
-    if (u.hostname === 'localhost' || u.hostname === '127.0.0.1') return true;
-    return !!(core && core.cfg.host_url && new URL(core.cfg.host_url).hostname === u.hostname);
+    if (u.protocol !== 'https:' && u.protocol !== 'http:') return false;
+    if (u.hostname === 'localhost' || u.hostname === '127.0.0.1') return true;           // this computer's own pages
+    return u.protocol === 'https:' && !!(core && core.cfg.host_url && new URL(core.cfg.host_url).hostname === u.hostname);
   } catch { return false; }
 };
 const targetUrl = () => (core.configured && !core.startError ? core.portalUrl() : core.localUrl('/'));
+
+// The main computer's certificate is self-signed on purpose: this window accepts exactly that certificate (this computer's
+// own, or the one pinned when it joined) and nothing else. Any other certificate error is refused as usual.
+app.on('certificate-error', (event, _wc, url, _error, certificate, callback) => {
+  event.preventDefault();
+  callback(!!(core && core.trustsCertificate(url, certificate.data)));
+});
+
+// A joined computer's window is signed in to the main computer with the token it received when it joined.
+async function primeSession() {
+  const c = core && core.sessionCookie();
+  if (!c) return;
+  try {
+    await session.defaultSession.cookies.set({ url: c.url, name: c.name, value: c.value, secure: true, httpOnly: true, sameSite: 'strict', expirationDate: Date.now() / 1000 + 365 * 86400 });
+  } catch (e) { log('could not sign the window in: ' + e.message); }
+}
+async function load(url) { await primeSession(); if (win && !win.isDestroyed()) await win.loadURL(url); }
 
 const CHROME_CSS = `
   html.in-electron body { padding-top: ${TITLEBAR}px; }
@@ -74,7 +91,7 @@ function createWindow() {
   });
   wc.on('will-navigate', (e, url) => { if (!isOurs(url)) { e.preventDefault(); if (/^https?:/.test(url)) shell.openExternal(url); } });
   wc.setWindowOpenHandler(({ url }) => { if (/^https?:/.test(url) && !isOurs(url)) shell.openExternal(url); return { action: 'deny' }; });
-  win.loadURL(targetUrl());
+  load(targetUrl()).catch(() => { });
 }
 
 function showWindow() {
@@ -86,7 +103,7 @@ function showWindow() {
 function rebuildTray() {
   if (!tray) return;
   tray.setContextMenu(Menu.buildFromTemplate([
-    { label: 'Open Artema Portal', click: () => { showWindow(); if (core.configured) win.loadURL(targetUrl()); } },
+    { label: 'Open Artema Portal', click: () => { showWindow(); if (core.configured) load(targetUrl()).catch(() => { }); } },
     { label: 'Show the Portal folder', enabled: core.configured, click: () => shell.openPath(core.folder) },
     { label: 'Setup and status', click: () => { showWindow(); win.loadURL(core.localUrl('/')); } },
     { type: 'separator' },
@@ -151,6 +168,9 @@ function applyLoginItem(on) {
   app.setLoginItemSettings({ openAtLogin: on, args: ['--background'] });
 }
 const hooks = {
+  // secrets (join PIN, this computer's token, the certificate's private key) are locked with the Windows account when possible
+  seal: t => (safeStorage.isEncryptionAvailable() ? 'os1:' + safeStorage.encryptString(t).toString('base64') : null),
+  unseal: t => (String(t).startsWith('os1:') ? safeStorage.decryptString(Buffer.from(String(t).slice(4), 'base64')) : ''),
   onIncoming: (who, name) => notify(`${who} sent a file`, name),
   onReceived: list => {
     if (list.length === 1) notify(`${list[0].by} sent you a file`, list[0].name);
@@ -177,6 +197,7 @@ if (!app.requestSingleInstanceLock()) {
   app.on('window-all-closed', () => { /* keep running in the tray */ });
   app.whenReady().then(async () => {
     Menu.setApplicationMenu(null);
+    session.defaultSession.setPermissionRequestHandler((_wc, _perm, cb) => cb(false));       // pages never get camera, location, notifications...
     setLogFile(path.join(app.getPath('userData'), 'portal.log'));
     if (await ensureInstalled()) return;
     core = new Core({

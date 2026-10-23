@@ -2,7 +2,7 @@
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
-const { ignored, readJson, writeJson, log, sleep, request, readAll, jsonRequest } = require('./util');
+const { ignored, readJson, writeJson, log, sleep, request, readAll, jsonRequest, TLS_IDENTITY_ERRORS } = require('./util');
 
 const SYNC_MS = 3000;
 const NET_ERRORS = new Set(['ECONNREFUSED', 'ECONNRESET', 'ETIMEDOUT', 'ENOTFOUND', 'EHOSTUNREACH', 'ENETUNREACH', 'EAI_AGAIN', 'ECONNABORTED', 'EPIPE']);
@@ -15,8 +15,10 @@ const depth = p => p.split('/').length;
  */
 class Agent {
   constructor(cfg, dataDir, hooks = {}) {
-    this.cfg = cfg;
+    this.cfg = cfg;                                  // host_cert (PEM, pinned) and token (already unsealed) come from the Core
     this.url = cfg.host_url.replace(/\/$/, '');
+    this.ca = cfg.host_cert || null;
+    this.token = cfg.token || '';
     this.folder = cfg.folder;
     this.statePath = path.join(dataDir, 'sync-state.json');
     this.hooks = hooks;
@@ -26,12 +28,12 @@ class Agent {
   }
 
   headers(extra = {}) {
-    return { 'X-Device': encodeURIComponent(this.cfg.name), 'X-Device-Id': this.cfg.device_id || '', ...extra };
+    return { 'X-Device': encodeURIComponent(this.cfg.name), Authorization: `Bearer ${this.token}`, ...extra };
   }
   call(p, body) {
     const has = body !== undefined;
     return jsonRequest(has ? 'POST' : 'GET', this.url + p, {
-      headers: this.headers(has ? { 'Content-Type': 'application/json' } : {}), body: has ? Buffer.from(JSON.stringify(body)) : null,
+      headers: this.headers(has ? { 'Content-Type': 'application/json' } : {}), body: has ? Buffer.from(JSON.stringify(body)) : null, ca: this.ca,
     });
   }
 
@@ -40,8 +42,8 @@ class Agent {
     fs.mkdirSync(path.dirname(dest), { recursive: true });
     const tmp = path.join(path.dirname(dest), `.artema-${crypto.randomBytes(8).toString('hex')}.part`);
     try {
-      const res = await request('GET', `${this.url}/api/file?path=${encodeURIComponent(p)}`, { headers: this.headers(), timeout: 30000 });
-      if (res.statusCode !== 200) { res.resume(); throw new Error(`download ${res.statusCode}`); }
+      const res = await request('GET', `${this.url}/api/file?path=${encodeURIComponent(p)}`, { headers: this.headers(), timeout: 30000, ca: this.ca });
+      if (res.statusCode !== 200) { res.resume(); throw Object.assign(new Error(`download ${res.statusCode}`), { status: res.statusCode }); }
       await new Promise((resolve, reject) => {
         const ws = fs.createWriteStream(tmp);
         res.on('error', reject); res.on('aborted', () => reject(new Error('download interrupted')));
@@ -63,7 +65,7 @@ class Agent {
     const src = path.join(this.folder, ...p.split('/'));
     const res = await request('PUT', `${this.url}/api/file?path=${encodeURIComponent(p)}&mtime=${mtime}`, {
       headers: this.headers({ 'Content-Length': size, 'Content-Type': 'application/octet-stream', 'X-Expect': expect || 'none' }),
-      body: fs.createReadStream(src), timeout: 60000,
+      body: fs.createReadStream(src), timeout: 60000, ca: this.ca,
     });
     await readAll(res);
     if (res.statusCode >= 300) throw Object.assign(new Error(`upload ${res.statusCode}`), { status: res.statusCode });
@@ -139,7 +141,7 @@ class Agent {
     const received = [];
     const attempt = async fn => {
       try { await fn(); } catch (e) {
-        if (NET_ERRORS.has(e.code)) throw e;                 // connection dropped: stop and report offline
+        if (NET_ERRORS.has(e.code) || TLS_IDENTITY_ERRORS.has(e.code) || e.status === 401) throw e;     // connection dropped, wrong certificate or access withdrawn: stop and report
         errors++; log(`sync error: ${e && e.message || e}`);
       }
     };
@@ -199,19 +201,28 @@ class Agent {
     const base = saved.key === this.hostKey() ? (saved.base || {}) : {};
     const loop = async () => {
       while (!this.stopped) {
+        let pause = 0;
         try {
           const errs = await this.sync(base);
           this.offlineSince = 0;
           if (errs) Object.assign(this.status, { state: 'warn', message: `${errs} file(s) couldn't sync yet` });
           else Object.assign(this.status, { state: 'ok', message: 'Up to date', last: Math.floor(Date.now() / 1000) });
         } catch (e) {
-          if (NET_ERRORS.has(e.code) || e.message === 'timeout' || e.code === 'WRONG_HOST') {
+          if (e.status === 401) {
+            pause = 15000;
+            Object.assign(this.status, { state: 'warn', message: 'The main computer no longer lets this computer in. Reconnect it from Setup and status.' });
+          } else if (TLS_IDENTITY_ERRORS.has(e.code) || e.code === 'CERT_MISMATCH') {
+            this.offlineSince = this.offlineSince || Date.now();
+            log(`certificate check failed (${e.code}) for ${this.url}`);
+            Object.assign(this.status, { state: 'offline', message: "Stopped: the main computer's security certificate isn't the one this computer trusts" });
+          } else if (NET_ERRORS.has(e.code) || e.message === 'timeout' || e.code === 'WRONG_HOST') {
             this.offlineSince = this.offlineSince || Date.now();
             Object.assign(this.status, { state: 'offline', message: e.code === 'WRONG_HOST' ? "That isn't the main computer any more" : "Can't reach the main computer" });
           } else if (e.code === 'FOLDER_UNREADABLE') {
             Object.assign(this.status, { state: 'warn', message: "Can't read the Artema Portal folder right now" });
           } else { log('agent error: ' + (e && e.stack || e)); Object.assign(this.status, { state: 'warn', message: 'Something went wrong. Retrying…' }); }
         }
+        if (pause) await sleep(pause);
         await sleep(SYNC_MS);
       }
     };

@@ -2,10 +2,14 @@
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
-const { HttpError, BAD_CHARS, ignored, readJson, writeJson, hide, lanIp } = require('./util');
+const { HttpError, BAD_CHARS, ignored, readJson, writeJson, cleanName, hide, lanIp } = require('./util');
+const { newToken, hashToken, WEB_SESSION_DAYS } = require('./security');
 
 const STARTER_FOLDERS = ['To CNC', 'From CNC', 'Drawings', 'Photos'];
 const ONLINE_SECONDS = 12;
+const RESERVED_NAMES = /^(con|prn|aux|nul|com[1-9]|lpt[1-9])(\..*)?$/i;       // Windows device names: opening one of these writes to hardware, not disk
+const MAX_UPLOAD = 8 * 1024 ** 3;
+const MAX_WEB_SESSIONS = 200;
 const nowSec = () => Date.now() / 1000;
 
 /** Everything the main computer knows: the folder, who added what, which PCs exist. */
@@ -15,25 +19,84 @@ class Store {
     fs.mkdirSync(root, { recursive: true });
     if (fresh) for (const n of STARTER_FOLDERS) fs.mkdirSync(path.join(root, n), { recursive: true });
     this.root = root;
+    this.realRoot = fs.realpathSync(root);
+    this.maxUpload = hooks.maxUpload || MAX_UPLOAD;
     this.hostName = hostName;
     this.hooks = hooks;
     this.trash = path.join(root, '.trash');
     this.metaPath = path.join(dataDir, 'meta.json');
     this.devicesPath = path.join(dataDir, 'devices.json');
+    this.sessionsPath = path.join(dataDir, 'sessions.json');
     this.activityPath = path.join(dataDir, 'activity.json');
     this.meta = readJson(this.metaPath, {});
     this.devices = readJson(this.devicesPath, {});
     this.activity = readJson(this.activityPath, []);
+    this.sessions = readJson(this.sessionsPath, {});          // browser sign-ins: token hash -> { name, exp }
     this.seen = new Map();
+    this.pruneSessions();
+    this.reindex();
   }
+
+  // ---- who is allowed in
+  /** token hash -> device id. Raw tokens are never stored: this file leaking does not let anyone in. */
+  reindex() {
+    this.byHash = new Map();
+    for (const [id, d] of Object.entries(this.devices)) if (d.th) this.byHash.set(d.th, id);
+  }
+  pruneSessions() {
+    const t = nowSec(); let changed = false;
+    for (const [h, v] of Object.entries(this.sessions)) if (!v || v.exp < t) { delete this.sessions[h]; changed = true; }
+    if (changed) writeJson(this.sessionsPath, this.sessions, 0o600);
+  }
+  /** { kind: 'device'|'web', id?, name } for a valid token, otherwise null. */
+  authToken(token) {
+    if (!token || typeof token !== 'string' || token.length > 200) return null;
+    const h = hashToken(token);
+    const id = this.byHash.get(h);
+    if (id && this.devices[id]) return { kind: 'device', id, name: this.devices[id].name };
+    const s = this.sessions[h];
+    if (s && s.exp >= nowSec()) return { kind: 'web', name: s.name };
+    return null;
+  }
+  createWebSession(name) {
+    this.pruneSessions();
+    const keys = Object.keys(this.sessions);
+    if (keys.length >= MAX_WEB_SESSIONS) {
+      keys.sort((a, b) => this.sessions[a].exp - this.sessions[b].exp);
+      for (const k of keys.slice(0, keys.length - MAX_WEB_SESSIONS + 1)) delete this.sessions[k];
+    }
+    const token = newToken();
+    this.sessions[hashToken(token)] = { name: cleanName(name, 40) || 'Guest', exp: nowSec() + WEB_SESSION_DAYS * 86400 };
+    writeJson(this.sessionsPath, this.sessions, 0o600);
+    return token;
+  }
+  clearWebSessions() { this.sessions = {}; writeJson(this.sessionsPath, this.sessions, 0o600); }
 
   // ---- paths
   safe(rel) {
     const parts = String(rel || '').replace(/\\/g, '/').split('/').filter(p => p !== '' && p !== '.');
     for (const p of parts) {
-      if (p === '..' || ignored(p) || BAD_CHARS.test(p) || /[ .]$/.test(p)) throw new HttpError(400, "That name can't be used");
+      if (p === '..' || ignored(p) || BAD_CHARS.test(p) || /[ .]$/.test(p) || RESERVED_NAMES.test(p) || p.length > 200) throw new HttpError(400, "That name can't be used");
     }
-    return { full: path.join(this.root, ...parts), rel: parts.join('/') };
+    const full = path.join(this.root, ...parts);
+    this.contain(full);
+    return { full, rel: parts.join('/') };
+  }
+
+  /** A shortcut or symlink inside the shared folder must not lead the API outside it. */
+  contain(full) {
+    const norm = x => (process.platform === 'win32' ? x.toLowerCase() : x);
+    let probe = full, real = null;
+    for (;;) {
+      try { real = fs.realpathSync(probe); break; } catch (e) {
+        if (e.code !== 'ENOENT' && e.code !== 'ENOTDIR') throw new HttpError(400, "That name can't be used");
+        const up = path.dirname(probe);
+        if (up === probe) throw new HttpError(400, "That name can't be used");
+        probe = up;
+      }
+    }
+    const root = norm(this.realRoot), r = norm(real);
+    if (r !== root && !r.startsWith(root + path.sep)) throw new HttpError(400, "That name can't be used");
   }
 
   // ---- reading
@@ -105,7 +168,9 @@ class Store {
   async putFile(relIn, stream, length, mtime, who, expect) {
     const { full, rel } = this.safe(relIn);
     if (!rel || (fs.existsSync(full) && fs.statSync(full).isDirectory())) throw new HttpError(400, "That isn't a file");
+    if (length > this.maxUpload) throw new HttpError(413, 'That file is too large');
     fs.mkdirSync(path.dirname(full), { recursive: true });
+    this.contain(path.dirname(full));
     const tmp = path.join(path.dirname(full), `.artema-${crypto.randomBytes(8).toString('hex')}.part`);
     let received = 0, existed = false;
     try {
@@ -185,25 +250,28 @@ class Store {
 
   setTag(id, tag) {
     if (!this.devices[id]) throw new HttpError(404, 'Not found');
-    this.devices[id].tag = String(tag || '').trim().slice(0, 20);
-    writeJson(this.devicesPath, this.devices);
+    this.devices[id].tag = cleanName(tag, 20);
+    writeJson(this.devicesPath, this.devices, 0o600);
   }
 
+  /** Adds (or re-adds) a computer and gives it a fresh token. The token is returned once; only its hash is kept. */
   register(name, ip, existingId, tag) {
-    name = String(name || '').trim();
-    if (!name || name.length > 40) throw new HttpError(400, 'Pick a name between 1 and 40 characters');
+    name = cleanName(name, 40);
+    if (!name) throw new HttpError(400, 'Pick a name between 1 and 40 characters');
     for (const [id, d] of Object.entries(this.devices)) {
       if (d.name.toLowerCase() === name.toLowerCase() && id !== existingId) throw new HttpError(409, 'Another computer already uses that name');
     }
     const id = existingId && this.devices[existingId] ? existingId : crypto.randomBytes(6).toString('hex');
     const prev = this.devices[id] || {};
-    this.devices[id] = { name, ip, added: prev.added || Math.floor(nowSec()), tag: prev.tag || String(tag || '').trim().slice(0, 20) };
-    writeJson(this.devicesPath, this.devices);
+    const token = newToken();
+    this.devices[id] = { name, ip, added: prev.added || Math.floor(nowSec()), tag: prev.tag || cleanName(tag, 20), th: hashToken(token) };
+    this.reindex();
+    writeJson(this.devicesPath, this.devices, 0o600);
     this.seen.set(id, nowSec());
-    return id;
+    return { id, token };
   }
   touch(id) { if (this.devices[id]) this.seen.set(id, nowSec()); }
-  removeDevice(id) { delete this.devices[id]; this.seen.delete(id); writeJson(this.devicesPath, this.devices); }
+  removeDevice(id) { delete this.devices[id]; this.seen.delete(id); this.reindex(); writeJson(this.devicesPath, this.devices, 0o600); }
 
   deviceList() {
     const out = [{ id: 'host', name: this.hostName, online: true, host: true, ip: lanIp() }];

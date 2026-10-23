@@ -15,11 +15,26 @@
     "appId": "com.artema.portal",
     "productName": "Artema Portal",
     "artifactName": "Artema-Portal-${version}-win.zip",
-    "directories": { "output": "dist" },
+    "directories": {
+      "output": "dist"
+    },
     "asar": false,
-    "files": ["main.js", "src/**/*", "web/**/*", "assets/**/*", "package.json"],
+    "files": [
+      "main.js",
+      "src/**/*",
+      "web/**/*",
+      "assets/**/*",
+      "package.json"
+    ],
     "win": {
-      "target": [{ "target": "zip", "arch": ["x64"] }],
+      "target": [
+        {
+          "target": "zip",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
       "icon": "assets/icon.ico",
       "signAndEditExecutable": false
     }
@@ -27,5 +42,8 @@
   "devDependencies": {
     "electron": "^45.0.0",
     "electron-builder": "^26.15.3"
+  },
+  "dependencies": {
+    "selfsigned": "^5.5.0"
   }
 }

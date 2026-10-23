@@ -76,11 +76,23 @@
     <div class="row-btns"><button class="btn primary big" id="first-go">Set up as main computer</button></div>
     <button class="back" id="first-cancel">Connect to a different one instead</button>
   </section>
+  <!-- auto: found one, needs its PIN -->
+  <section class="step" id="s-pin">
+    <div class="eyebrow">One quick thing</div>
+    <h1>Enter the PIN.</h1>
+    <p class="lead" id="pin-lead">Found the main computer. Its PIN is on that computer, under Setup and status.</p>
+    <div class="form"><div><label class="lab" for="auto-pin">PIN</label><input class="field" id="auto-pin" placeholder="XXXXX-XXXXX" autocomplete="off" spellcheck="false" autocapitalize="characters" maxlength="14"></div></div>
+    <div class="err" id="pin-err"></div>
+    <div class="row-btns"><button class="btn primary big" id="pin-go">Connect</button></div>
+    <button class="back" id="pin-manual">Set up manually</button>
+  </section>
+
   <!-- welcome -->
   <section class="step" id="s-welcome">
     <div class="eyebrow">Portal setup</div>
     <h1>Let's set up this computer.</h1>
     <p class="lead">It takes about a minute. Which one is this?</p>
+    <div class="note" id="welcome-err" style="display:none;color:#ffb0ab;text-align:center;margin:-14px auto 22px;max-width:440px"></div>
     <div class="choices">
       <button class="choice" id="pick-host"><div class="ic"><svg class="i" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="6" rx="2"/><rect x="3" y="14" width="18" height="6" rx="2"/><path d="M7 7h.01M7 17h.01"/></svg></div><div><b>This is the main computer</b><span>Holds the files. Other computers connect to it.</span></div></button>
       <button class="choice" id="pick-join"><div class="ic"><svg class="i" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="12" rx="2.5"/><path d="M8 20h8M12 16v4"/></svg></div><div><b>Connect to the main computer</b><span>Get the shared folder on this desktop.</span></div></button>
@@ -121,7 +133,10 @@
     <div class="eyebrow">Almost there</div>
     <h1>Name this computer.</h1>
     <p class="lead" id="name-lead">Pick something people will recognise.</p>
-    <div class="form"><div><label class="lab" for="join-name">Computer name</label><input class="field" id="join-name" placeholder="e.g. Boss Office" maxlength="40" autocomplete="off"></div></div>
+    <div class="form">
+      <div><label class="lab" for="join-name">Computer name</label><input class="field" id="join-name" placeholder="e.g. Boss Office" maxlength="40" autocomplete="off"></div>
+      <div style="margin-top:14px"><label class="lab" for="join-pin">PIN from the main computer</label><input class="field" id="join-pin" placeholder="XXXXX-XXXXX" autocomplete="off" spellcheck="false" autocapitalize="characters" maxlength="14"></div>
+    </div>
     <div class="err" id="name-err"></div>
     <div class="row-btns"><button class="btn primary big" id="name-go">Connect</button></div>
     <button class="back" data-back>Back</button>
@@ -202,8 +217,8 @@ async function doHost() {
     const r = await runChecks(['Creating the Artema Portal folder', 'Starting the server', 'Setting it to start with Windows'], () => api('host', { name, port, auto: autoHost }));
     portalUrl = r.portal_url;
     $('#done-title').textContent = 'The Portal is live.';
-    $('#done-lead').textContent = 'On every other computer, open Artema Portal and choose “Connect to the main computer”.';
-    $('#done-extra').innerHTML = `<div class="big-addr"><small>Address of this computer</small><code>${esc(r.address)}</code></div>` +
+    $('#done-lead').textContent = 'On every other computer, open Artema Portal and enter this PIN when it asks. Keep the PIN private: it lets a computer into your files.';
+    $('#done-extra').innerHTML = `<div class="big-addr"><small>PIN for adding computers</small><code>${esc(r.pin)}</code></div><div class="big-addr" style="margin-top:12px"><small>Address of this computer</small><code>${esc(r.address)}</code></div>` +
       (r.firewall ? '' : '<p class="note">If Windows asks about network access, choose <b>Allow</b> so other computers can connect.</p>');
     show('s-done');
   } catch (e) { show('s-host', false); $('#host-err').textContent = e.message; }
@@ -237,13 +252,14 @@ async function doFind() {
   $('#find-go').disabled = false;
 }
 $('#find-go').onclick = doFind; enter($('#join-addr'), doFind);
-function toName() { $('#name-lead').textContent = `Connecting to ${hostLabel}. Pick something people will recognise.`; $('#join-name').value = ''; show('s-name'); }
+function toName() { $('#name-lead').textContent = `Connecting to ${hostLabel}. Pick a name people will recognise, and enter the PIN from that computer.`; $('#join-name').value = ''; $('#join-pin').value = ''; show('s-name'); }
 async function doJoin() {
   $('#name-err').textContent = '';
-  const name = $('#join-name').value.trim();
+  const name = $('#join-name').value.trim(), pin = $('#join-pin').value.trim();
   if (!name) { $('#name-err').textContent = 'Give this computer a name.'; return; }
+  if (!pin) { $('#name-err').textContent = 'Enter the PIN shown on the main computer.'; return; }
   try {
-    const r = await runChecks(['Connecting', 'Creating the Artema Portal folder on this desktop', 'Syncing your files', 'Setting it to start with Windows'], () => api('join', { address: chosenAddr, name }));
+    const r = await runChecks(['Connecting securely', 'Creating the Artema Portal folder on this desktop', 'Syncing your files', 'Setting it to start with Windows'], () => api('join', { address: chosenAddr, name, pin }));
     portalUrl = r.portal_url;
     $('#done-title').textContent = "You're connected.";
     $('#done-lead').textContent = `The Artema Portal folder is on this desktop and stays in step with ${r.host}.`;
@@ -251,7 +267,7 @@ async function doJoin() {
     show('s-done');
   } catch (e) { show('s-name', false); $('#name-err').textContent = e.message; }
 }
-$('#name-go').onclick = doJoin; enter($('#join-name'), doJoin);
+$('#name-go').onclick = doJoin; enter($('#join-name'), doJoin); enter($('#join-pin'), doJoin);
 
 // ---- done / home
 const openPortal = () => { if (portalUrl) location.href = portalUrl; };
@@ -271,8 +287,13 @@ async function paintHome() {
   $('#home-dot').className = 'dot ' + (st.state === 'ok' ? '' : st.state === 'offline' ? 'off' : 'warn');
   $('#home-status').textContent = host ? `Serving files${state.devices ? ` · ${state.devices} computer${state.devices === 1 ? '' : 's'} connected` : ''}` : `${st.message || ''}${st.files ? ` · ${st.files} file${st.files === 1 ? '' : 's'}` : ''}`;
   const warn = $('#home-warn'); warn.style.display = state.conflict ? '' : 'none'; if (state.conflict) warn.textContent = `Another main computer, “${state.conflict.name}” (${state.conflict.address}), is on this network. Pick one to keep, then disconnect the other.`;
-  $('#home-extra').innerHTML = host ? `<div class="big-addr"><small>Address of this computer</small><code>${esc(state.address)}</code></div>` : '';
+  $('#home-extra').innerHTML = host ? `<div class="big-addr"><small>PIN for adding computers</small><code>${esc(state.pin || '')}</code></div><div class="big-addr" style="margin-top:12px"><small>Address of this computer</small><code>${esc(state.address)}</code></div><button class="back" id="rotate-pin" style="margin-top:14px">Make a new PIN</button>` : '';
 }
+$('#home-extra').addEventListener('click', async e => {
+  if (!e.target.closest('#rotate-pin')) return;
+  if (!confirm('Make a new PIN? Computers that are already connected keep working. The old PIN stops working, and anyone signed in through a web browser will need the new one.')) return;
+  try { await api('pin/rotate', {}); paintHome(); } catch (err) { alert(err.message); }
+});
 
 let firstTimer;
 async function autoStart() {
@@ -280,16 +301,32 @@ async function autoStart() {
   try {
     const r = await api('auto', {});
     if (r.action === 'already') { location.href = r.portal_url; return; }
-    if (r.action === 'joined') {
-      portalUrl = r.portal_url;
-      $('#done-title').textContent = "You're connected.";
-      $('#done-lead').textContent = `This computer joined ${r.host} as “${r.name}”. The Artema Portal folder is on the desktop.`;
-      $('#done-extra').innerHTML = '';
-      show('s-done', false); return;
+    if (r.action === 'joined') return autoJoined(r);
+    if (r.action === 'needs-pin') {
+      $('#pin-lead').textContent = `Found ${r.host}. Its PIN is on that computer, under Setup and status.`;
+      show('s-pin', false); return;
     }
     firstCountdown(r.hostname);
   } catch (e) { show('s-welcome', false); }
 }
+function autoJoined(r) {
+  portalUrl = r.portal_url;
+  $('#done-title').textContent = "You're connected.";
+  $('#done-lead').textContent = `This computer joined ${r.host} as “${r.name}”. The Artema Portal folder is on the desktop.`;
+  $('#done-extra').innerHTML = '';
+  show('s-done', false);
+}
+async function doAutoPin() {
+  $('#pin-err').textContent = '';
+  const pin = $('#auto-pin').value.trim();
+  if (!pin) { $('#pin-err').textContent = 'Enter the PIN shown on the main computer.'; return; }
+  $('#pin-go').disabled = true;
+  try { autoJoined(await runChecks(['Connecting securely', 'Creating the Artema Portal folder on this desktop', 'Syncing your files', 'Setting it to start with Windows'], () => api('auto', { pin }))); }
+  catch (e) { show('s-pin', false); $('#pin-err').textContent = e.message; }
+  $('#pin-go').disabled = false;
+}
+$('#pin-go').onclick = doAutoPin; enter($('#auto-pin'), doAutoPin);
+$('#pin-manual').onclick = () => show('s-welcome', false);
 function firstCountdown(hostname) {
   let n = 8; const btn = $('#first-go');
   show('s-first', false);
@@ -301,7 +338,7 @@ $('#first-cancel').onclick = () => { clearInterval(firstTimer); show('s-welcome'
 $('#auto-manual').onclick = () => show('s-welcome', false);
 (async () => {
   state = await api('state');
-  if (state.error) { show('s-welcome', false); return; }
+  if (state.error) { const w = $('#welcome-err'); w.textContent = state.error; w.style.display = ''; show('s-welcome', false); return; }
   if (state.configured) { show('s-home', false); await paintHome(); setInterval(paintHome, 2500); } else autoStart();
 })();
 </script>

@@ -3,10 +3,11 @@ const fs = require('fs');
 const path = require('path');
 const os = require('os');
 const http = require('http');
+const https = require('https');
 const { execFile } = require('child_process');
 
 const APP_NAME = 'Artema Portal';
-const VERSION = '1.0.0';
+const VERSION = '1.1.0';
 
 class HttpError extends Error {
   constructor(status, message) { super(message); this.status = status; }
@@ -21,12 +22,15 @@ const ignored = name => {
 function readJson(p, fallback) {
   try { return JSON.parse(fs.readFileSync(p, 'utf8')); } catch { return fallback; }
 }
-function writeJson(p, obj) {
+function writeJson(p, obj, mode = 0o644) {
   fs.mkdirSync(path.dirname(p), { recursive: true });
   const tmp = p + '.tmp';
-  fs.writeFileSync(tmp, JSON.stringify(obj));
+  fs.writeFileSync(tmp, JSON.stringify(obj), { mode });     // secrets pass 0o600: readable by this user only (no effect on Windows, where the profile folder is already private)
   fs.renameSync(tmp, p);
 }
+
+/** A display name that is safe to store and show: no control characters, trimmed, bounded. */
+const cleanName = (s, max = 60) => String(s == null ? '' : s).replace(/[\u0000-\u001f\u007f]/g, '').trim().slice(0, max);
 
 let logFile = null;
 function setLogFile(p) { logFile = p; }
@@ -55,11 +59,25 @@ function lanIp() {
 
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 
-// ---- tiny http client (streams in both directions)
-function request(method, urlStr, { headers = {}, body = null, timeout = 15000 } = {}) {
+// ---- tiny http(s) client (streams in both directions)
+/**
+ * https talks to a main computer's self-signed certificate. There are two ways to trust it:
+ *  - `ca`: the exact certificate pinned when this computer joined. Anything else fails the handshake, before a single
+ *    byte (the token included) is sent. Host names are not checked: the pinned certificate IS the identity, which is also
+ *    why the main computer can change address without breaking anything.
+ *  - neither: first contact only (finding a main computer, learning its certificate). Nothing secret is sent that way.
+ */
+function request(method, urlStr, { headers = {}, body = null, timeout = 15000, ca = null } = {}) {
   return new Promise((resolve, reject) => {
     const u = new URL(urlStr);
-    const req = http.request({ method, hostname: u.hostname, port: u.port || 80, path: u.pathname + u.search, headers, agent: false }, resolve);
+    const secure = u.protocol === 'https:';
+    const opts = { method, hostname: u.hostname, port: u.port || (secure ? 443 : 80), path: u.pathname + u.search, headers, agent: false };
+    if (secure) {
+      opts.minVersion = 'TLSv1.2';
+      if (ca) { opts.ca = ca; opts.rejectUnauthorized = true; opts.checkServerIdentity = () => undefined; }      // verification stays on even if the environment tries to turn it off
+      else opts.rejectUnauthorized = false;
+    }
+    const req = (secure ? https : http).request(opts, resolve);
     req.setTimeout(timeout, () => req.destroy(Object.assign(new Error('timeout'), { code: 'ETIMEDOUT' })));
     req.on('error', reject);
     if (body && typeof body.pipe === 'function') {
@@ -70,6 +88,10 @@ function request(method, urlStr, { headers = {}, body = null, timeout = 15000 } 
     } else req.end(body || undefined);
   });
 }
+/** The PEM of the certificate on the other end of a response (https only). */
+function peerCertPem(res) {
+  try { const c = res.socket.getPeerCertificate(true); return c && c.raw ? require('./security').pemFromDer(c.raw) : ''; } catch { return ''; }
+}
 function readAll(res) {
   return new Promise((resolve, reject) => {
     const chunks = [];
@@ -78,6 +100,10 @@ function readAll(res) {
     res.on('error', reject);
   });
 }
+const TLS_IDENTITY_ERRORS = new Set([
+  'DEPTH_ZERO_SELF_SIGNED_CERT', 'SELF_SIGNED_CERT_IN_CHAIN', 'UNABLE_TO_VERIFY_LEAF_SIGNATURE', 'UNABLE_TO_GET_ISSUER_CERT', 'UNABLE_TO_GET_ISSUER_CERT_LOCALLY',
+  'CERT_HAS_EXPIRED', 'CERT_NOT_YET_VALID', 'CERT_UNTRUSTED', 'ERR_TLS_CERT_ALTNAME_INVALID', 'ERR_SSL_TLSV1_ALERT_UNKNOWN_CA', 'ERR_SSL_SSLV3_ALERT_BAD_CERTIFICATE',
+]);
 async function jsonRequest(method, url, opts = {}) {
   const res = await request(method, url, opts);
   const buf = await readAll(res);
@@ -99,11 +125,11 @@ function guardRequest(req) {
   if (!lanLike) throw new HttpError(403, 'Not allowed');
   if ((req.method === 'POST' || req.method === 'PUT') && !req.headers['x-device']) throw new HttpError(403, 'Not allowed');
 }
-function sendJson(res, obj, status = 200) {
+function sendJson(res, obj, status = 200, extra = {}) {
   const b = Buffer.from(JSON.stringify(obj));
   res.writeHead(status, {
-    'Content-Type': 'application/json; charset=utf-8', 'Content-Length': b.length, 'Cache-Control': 'no-cache',
-    ...(status >= 400 ? { Connection: 'close' } : {}),
+    'Content-Type': 'application/json; charset=utf-8', 'Content-Length': b.length, 'Cache-Control': 'no-store',
+    ...(status >= 400 ? { Connection: 'close' } : {}), ...extra,
   });
   res.end(b);
 }
@@ -123,7 +149,9 @@ const MIME = {
 const mimeOf = n => MIME[path.extname(n).toLowerCase()] || 'application/octet-stream';
 
 function serveStatic(res, webDir, urlPath, defaultPage) {
-  const rel = urlPath === '/' || urlPath === '' ? defaultPage : decodeURIComponent(urlPath.replace(/^\/+/, ''));
+  let rel;
+  try { rel = urlPath === '/' || urlPath === '' ? defaultPage : decodeURIComponent(urlPath.replace(/^\/+/, '')); } catch { throw new HttpError(400, 'Bad request'); }
+  if (rel.includes('\0')) throw new HttpError(400, 'Bad request');
   const full = path.resolve(webDir, rel);
   if (!full.startsWith(path.resolve(webDir) + path.sep) || !fs.existsSync(full) || !fs.statSync(full).isFile()) throw new HttpError(404, 'Not found');
   const data = fs.readFileSync(full);
@@ -141,6 +169,6 @@ function sendError(res, e) {
 }
 
 module.exports = {
-  APP_NAME, VERSION, HttpError, BAD_CHARS, ignored, readJson, writeJson, setLogFile, log, hide, lanIp, sleep,
-  request, readAll, jsonRequest, guardRequest, sendJson, readBody, mimeOf, serveStatic, sendError,
+  APP_NAME, VERSION, HttpError, BAD_CHARS, ignored, readJson, writeJson, cleanName, setLogFile, log, hide, lanIp, sleep,
+  request, peerCertPem, TLS_IDENTITY_ERRORS, readAll, jsonRequest, guardRequest, sendJson, readBody, mimeOf, serveStatic, sendError,
 };
