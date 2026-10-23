@@ -1,0 +1,772 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0a0b0f">
+<title>Artema Portal (preview)</title>
+<link rel="icon" href="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAALkAAAC0CAMAAAD/7X2wAAAABGdBTUEAALGPC/xhBQAAAAFzUkdCAK7OHOkAAAAgY0hSTQAAeiYAAICEAAD6AAAAgOgAAHUwAADqYAAAOpgAABdwnLpRPAAAAbxQTFRFAAAAERIGERIGERIGERIGERIGERIGERIGERIGERIGERIGERIGERIGERIGERIGERIGERIGERIGERIGERIGERIGERIGERIGERIGERIGERIGERIGERIGERIGERIGERIGERIGERIGERIGERIGERIGERIGERIGERIGERIGERIGERIGERIGERIGERIGERIGERIGERIGERIGERIGERIGERIGERIGERIGERIGERIGERIGERIGERIGERIGERIGERIGERIGERIGERIGERIGERIGERIGERIGERIGERIGERIGERIGERIGERIGERIGERIGERIGERIGERIGERIGERIGERIGERIGERIGERIGERIGERIGERIGERIGERIGERIGERIGERIGERIGERIGERIGERIGERIGERIGERIGERIGERIGERIGERIGERIGERIGERIGERIGERIGERIGERIGERIGERIGERIGERIGERIGERIGERIGERIGERIGERIGERIGERIGERIGERIGERIGERIGERIGERIGERIGERIGERIGERIGERIGERIGERIGERIGERIGERIGERIGERIGERIGERIGERIGERIGERIGERIGhKSNwAAAAJR0Uk5TAMn/8oAN63GPrAxKJQ+TjZRmee3w+/ml4i08bvFXCt/6/CQZ/pDonYq3HoKuEu6pa13SU8pgiO8QcvRzCTOfyz57GrnbwjeoMTsGAZF3TBXWSAJDzUK0dOGwRGOzGJVw6R+k5Wzqv6e+o92em5nBuImHwHx62GL21TnmS1Fh0BQWIwcONFVlhdmGBCkqNbGtKFLkNtZuc7AAAAJQSURBVHja7d2FbpMBGIXhs9MJc99whsOA4e7u7u7uOnxu3Sgb3DDJSkL/hoSmdP17tvNewJcn3w0cOOecc84555xzbqJ2LxJ2b5Fe/Qy7VqRXHsPuh+WWWz6O5ctLR7LbsaMZkq9AtjueIXk+st1Pyy233HLLLbfc8vDlbe2i8us3OiTlc4rJTkV5dRM5vUBPPhgjyYievIiUlHc/oKa8hpSU79hOSfmpPlJSfvIEJeUl80lJ+chkSsrnFpOS8upaSsqblzLQbBX5xk1M7MrlJg350HMGeoNDlJC/ZqBX3cBBBfm+vQw0bRQjIH/JQLEhaMhPn2Fire8ACfnhIwx06yY05J/7mVjhDEBDPsBAj9uhIr/LhD72ADLyPP6pohyS8v5PgKR8IApNeR8gKv8iKy+y3HLLLbfccsstt9xyyy233HLLLbfccsstt9xyyy233HLLLbfccsstt9zyHJavlZWvk5Vz21ZVOflwUFVOXrsqJH/PxCIvOoV+HuzCeRX5rp0NDPa1V0MONC9hUs96NORA2SImde6shhyYUsGk9h8APgjIgW8LmdTTrs55v+UlqRwISw5MbWSwBY31HK0OKdQWnhy4dJF/raGqctK/qrwfphwoXcy0C1cOrF6jKgdWrlKVA72PVOWI3rktKge2bG4RlQPLatYzrUKXAxvyGa8+Vvw91WJPckCOKOPVIY1ClQ8zXmSmrLzAcstzUl6EDFQehryqY/i/KysNQZ6hLLfccsvj7eFY1IWxb3dLYcarnVXicRbnnHPOOeecm8j9AjFTi/Jdj7UlAAAAAElFTkSuQmCC">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700&display=swap">
+<style>/* Artema brand: burgundy #7b2528, amber #cc7d14, cream #fbeedf, ink #161922 */
+:root {
+  --bg: #0a0b0f;
+  --panel: #101218;
+  --panel-2: #161922;
+  --raise: #1b1f2a;
+  --line: rgba(251, 238, 223, .08);
+  --line-strong: rgba(251, 238, 223, .16);
+  --text: #f6efe6;
+  --muted: rgba(246, 239, 230, .56);
+  --faint: rgba(246, 239, 230, .34);
+  --amber: #cc7d14;
+  --amber-hi: #e39a2f;
+  --burgundy: #7b2528;
+  --burgundy-hi: #a8343a;
+  --ok: #5fd08b;
+  --danger: #ef6a63;
+  --radius: 14px;
+  --ease: cubic-bezier(.2, .8, .2, 1);
+  --font: "Montserrat", "Segoe UI Variable Text", "Segoe UI", -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
+}
+
+* { box-sizing: border-box; }
+html, body { height: 100%; }
+body {
+  margin: 0;
+  font-family: var(--font);
+  font-size: 14px;
+  line-height: 1.45;
+  color: var(--text);
+  background:
+    radial-gradient(1100px 600px at 8% -10%, rgba(123, 37, 40, .34), transparent 60%),
+    radial-gradient(900px 500px at 100% 110%, rgba(204, 125, 20, .10), transparent 60%),
+    var(--bg);
+  background-attachment: fixed;
+  -webkit-font-smoothing: antialiased;
+  letter-spacing: .005em;
+}
+button, input { font: inherit; color: inherit; }
+button { cursor: pointer; }
+svg.i { width: 18px; height: 18px; stroke: currentColor; fill: none; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; flex: none; }
+
+.btn {
+  display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+  height: 40px; padding: 0 20px; border-radius: 999px; border: 1px solid var(--line-strong);
+  background: rgba(251, 238, 223, .04); font-weight: 600; font-size: 13px; letter-spacing: .02em;
+  transition: transform .18s var(--ease), background .18s var(--ease), border-color .18s var(--ease), box-shadow .18s var(--ease);
+}
+.btn:hover { background: rgba(251, 238, 223, .09); }
+.btn:active { transform: scale(.97); }
+.btn.primary { background: var(--amber); border-color: transparent; color: #1a1106; box-shadow: 0 8px 24px -10px rgba(204, 125, 20, .8); }
+.btn.primary:hover { background: var(--amber-hi); }
+.btn.danger { color: var(--danger); }
+.btn.big { height: 52px; padding: 0 32px; font-size: 15px; }
+.btn[disabled] { opacity: .45; pointer-events: none; }
+
+input.field {
+  width: 100%; height: 52px; padding: 0 18px; border-radius: 14px; border: 1px solid var(--line-strong);
+  background: rgba(251, 238, 223, .04); outline: none; font-size: 16px; transition: border-color .18s, box-shadow .18s, background .18s;
+}
+input.field::placeholder { color: var(--faint); }
+input.field:focus { border-color: var(--amber); box-shadow: 0 0 0 4px rgba(204, 125, 20, .16); background: rgba(251, 238, 223, .06); }
+
+::selection { background: rgba(204, 125, 20, .4); }
+::-webkit-scrollbar { width: 10px; height: 10px; }
+::-webkit-scrollbar-thumb { background: rgba(251, 238, 223, .12); border-radius: 10px; border: 3px solid transparent; background-clip: content-box; }
+::-webkit-scrollbar-thumb:hover { background: rgba(251, 238, 223, .22); border: 3px solid transparent; background-clip: content-box; }
+
+/* ---------- layout: sidebar | main | details (desktop first) ---------- */
+.app { display: grid; grid-template-columns: 248px minmax(0, 1fr) 0; height: 100vh; transition: grid-template-columns .28s var(--ease); }
+.app.has-detail { grid-template-columns: 248px minmax(0, 1fr) 360px; }
+
+.side {
+  display: flex; flex-direction: column; gap: 6px; padding: 26px 16px 18px;
+  border-right: 1px solid var(--line); background: rgba(10, 11, 15, .55); backdrop-filter: blur(20px);
+}
+.brand { display: flex; align-items: center; gap: 10px; padding: 0 10px 26px; }
+.brand img { height: 22px; width: auto; display: block; }
+.brand span { font-size: 11px; letter-spacing: .32em; text-transform: uppercase; color: var(--amber); font-weight: 600; padding-top: 2px; }
+
+.nav {
+  display: flex; align-items: center; gap: 12px; width: 100%; height: 42px; padding: 0 12px; border: 0; border-radius: 12px;
+  background: transparent; color: var(--muted); font-weight: 500; text-align: left; transition: background .18s, color .18s;
+}
+.nav:hover { background: rgba(251, 238, 223, .05); color: var(--text); }
+.nav.active { background: rgba(251, 238, 223, .09); color: var(--text); }
+.nav.active svg { color: var(--amber); }
+.nav .count { margin-left: auto; font-size: 11px; color: var(--faint); }
+.side-label { margin: 22px 12px 6px; font-size: 10.5px; letter-spacing: .2em; text-transform: uppercase; color: var(--faint); font-weight: 600; }
+.quick { display: flex; flex-direction: column; gap: 2px; overflow: auto; }
+.quick .nav { height: 38px; font-size: 13px; }
+.quick .nav svg { color: var(--amber); opacity: .85; }
+.side-foot { margin-top: auto; padding: 14px 12px 0; border-top: 1px solid var(--line); display: flex; flex-direction: column; gap: 4px; font-size: 12px; color: var(--muted); }
+.who-line { display: flex; align-items: center; gap: 8px; }
+.dot { width: 8px; height: 8px; border-radius: 50%; background: var(--ok); box-shadow: 0 0 0 4px rgba(95, 208, 139, .14); flex: none; }
+.dot.off { background: var(--danger); box-shadow: 0 0 0 4px rgba(239, 106, 99, .16); }
+.link { background: none; border: 0; padding: 0; color: var(--amber); text-align: left; font-size: 12px; }
+.link:hover { color: var(--amber-hi); }
+
+main { display: flex; flex-direction: column; min-width: 0; overflow: hidden; }
+.top { display: flex; align-items: center; gap: 12px; padding: 22px 36px 8px; }
+.search {
+  position: relative; flex: 1; max-width: 560px; display: flex; align-items: center; height: 46px; padding: 0 16px; gap: 10px;
+  border-radius: 999px; border: 1px solid var(--line); background: rgba(251, 238, 223, .045); color: var(--muted);
+  transition: border-color .2s, box-shadow .2s, background .2s;
+}
+.search:focus-within { border-color: var(--amber); box-shadow: 0 0 0 4px rgba(204, 125, 20, .14); background: rgba(251, 238, 223, .07); color: var(--text); }
+.search input { flex: 1; min-width: 0; height: 100%; border: 0; outline: none; background: transparent; font-size: 14px; }
+.search input::placeholder { color: var(--faint); }
+.search kbd { font: 600 11px var(--font); color: var(--faint); border: 1px solid var(--line-strong); border-radius: 6px; padding: 1px 7px; }
+.spacer { flex: 1; }
+
+.scroll { flex: 1; overflow: auto; padding: 8px 36px 60px; }
+.view[hidden] { display: none; }
+.head { display: flex; align-items: flex-end; justify-content: space-between; gap: 16px; margin: 18px 0 18px; }
+.crumbs { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; font-size: 28px; font-weight: 600; letter-spacing: -.01em; }
+.crumbs button { background: none; border: 0; padding: 2px 6px; margin-left: -6px; border-radius: 8px; color: var(--muted); font: inherit; transition: color .18s, background .18s; }
+.crumbs button:hover { color: var(--text); background: rgba(251, 238, 223, .06); }
+.crumbs button:last-child { color: var(--text); }
+.crumbs .sep { color: var(--faint); font-weight: 400; }
+.sub { color: var(--muted); font-size: 13px; margin-top: 4px; font-weight: 400; letter-spacing: 0; }
+.head-actions { display: flex; gap: 10px; flex: none; }
+
+/* ---------- file list ---------- */
+.table { border: 1px solid var(--line); border-radius: 18px; background: linear-gradient(180deg, rgba(251, 238, 223, .035), rgba(251, 238, 223, .015)); overflow: hidden; }
+.row { display: grid; grid-template-columns: minmax(0, 1fr) 150px 150px 90px; align-items: center; gap: 16px; padding: 10px 18px; border-bottom: 1px solid var(--line); position: relative; transition: background .15s; }
+.row:last-child { border-bottom: 0; }
+.row.th { padding-top: 12px; padding-bottom: 12px; font-size: 10.5px; text-transform: uppercase; letter-spacing: .16em; color: var(--faint); font-weight: 600; background: rgba(0, 0, 0, .14); }
+.row.item { cursor: pointer; }
+.row.item:hover { background: rgba(251, 238, 223, .045); }
+.row.item.sel { background: rgba(204, 125, 20, .1); }
+.row.item.sel::before { content: ""; position: absolute; left: 0; top: 10px; bottom: 10px; width: 3px; border-radius: 3px; background: var(--amber); }
+.cell-name { display: flex; align-items: center; gap: 14px; min-width: 0; }
+.cell-name .t { min-width: 0; }
+.cell-name .n { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.cell-name .p { font-size: 12px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.muted { color: var(--muted); font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.num { text-align: right; }
+
+.tile { width: 42px; height: 42px; border-radius: 12px; display: grid; place-items: center; flex: none; font-size: 10px; font-weight: 700; letter-spacing: .06em; overflow: hidden; background: rgba(251, 238, 223, .07); color: var(--muted); }
+.tile img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.tile.folder { background: rgba(204, 125, 20, .14); color: var(--amber); }
+.tile.folder svg { width: 22px; height: 22px; }
+.tile.cad { background: rgba(204, 125, 20, .16); color: var(--amber-hi); }
+.tile.pdf { background: rgba(239, 106, 99, .15); color: #ff8d86; }
+.tile.prog { background: rgba(95, 208, 139, .13); color: var(--ok); }
+.tile.sheet { background: rgba(110, 190, 255, .13); color: #8fcbff; }
+.tile.img { background: rgba(168, 52, 58, .2); color: #ff9aa0; }
+
+.empty { display: grid; place-items: center; gap: 14px; padding: 70px 20px; text-align: center; color: var(--muted); }
+.empty .ring { width: 84px; height: 84px; border-radius: 50%; display: grid; place-items: center; border: 1px dashed var(--line-strong); color: var(--amber); }
+.empty .ring svg { width: 34px; height: 34px; }
+.empty h3 { margin: 0; color: var(--text); font-size: 18px; font-weight: 600; }
+
+/* ---------- details ---------- */
+.detail { overflow: hidden; border-left: 1px solid var(--line); background: rgba(10, 11, 15, .55); backdrop-filter: blur(20px); }
+.detail-in { width: 360px; height: 100%; overflow: auto; padding: 26px 24px; display: flex; flex-direction: column; gap: 18px; }
+.detail .close { align-self: flex-end; background: none; border: 0; color: var(--muted); width: 32px; height: 32px; border-radius: 50%; display: grid; place-items: center; margin: -10px -8px -6px 0; }
+.detail .close:hover { background: rgba(251, 238, 223, .08); color: var(--text); }
+.preview { aspect-ratio: 4 / 3; border-radius: 16px; border: 1px solid var(--line); background: rgba(251, 238, 223, .04); display: grid; place-items: center; overflow: hidden; }
+.preview img { width: 100%; height: 100%; object-fit: contain; }
+.preview .tile { width: 96px; height: 96px; border-radius: 26px; font-size: 18px; }
+.detail h2 { margin: 0; font-size: 20px; font-weight: 600; word-break: break-word; letter-spacing: -.005em; }
+.facts { display: grid; grid-template-columns: auto 1fr; gap: 10px 18px; margin: 0; font-size: 13px; }
+.facts dt { color: var(--faint); }
+.facts dd { margin: 0; text-align: right; word-break: break-word; }
+.detail .actions { display: flex; flex-direction: column; gap: 10px; margin-top: 4px; }
+.detail .actions .btn { width: 100%; }
+.detail .actions .pair { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+
+/* ---------- activity & computers ---------- */
+.feed { display: flex; flex-direction: column; border: 1px solid var(--line); border-radius: 18px; overflow: hidden; background: rgba(251, 238, 223, .025); }
+.ev { display: flex; align-items: center; gap: 14px; padding: 14px 18px; border-bottom: 1px solid var(--line); cursor: pointer; transition: background .15s; }
+.ev:last-child { border-bottom: 0; }
+.ev:hover { background: rgba(251, 238, 223, .04); }
+.ev .t { flex: 1; min-width: 0; }
+.ev .t b { font-weight: 600; }
+.ev .t div { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ev .when { color: var(--faint); font-size: 12px; flex: none; }
+.avatar { width: 36px; height: 36px; border-radius: 50%; display: grid; place-items: center; flex: none; font-weight: 700; font-size: 13px; background: var(--burgundy); color: #fde9d3; }
+
+.cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 16px; }
+.card { border: 1px solid var(--line); border-radius: 20px; padding: 22px; background: linear-gradient(180deg, rgba(251, 238, 223, .05), rgba(251, 238, 223, .02)); display: flex; flex-direction: column; gap: 14px; }
+.card .top-line { display: flex; align-items: center; gap: 14px; }
+.card .pc { width: 46px; height: 46px; border-radius: 14px; display: grid; place-items: center; background: rgba(251, 238, 223, .07); color: var(--muted); }
+.card h3 { margin: 0; font-size: 16px; font-weight: 600; }
+.card .state { display: flex; align-items: center; gap: 8px; color: var(--muted); font-size: 12.5px; }
+.badge { font-size: 10px; letter-spacing: .14em; text-transform: uppercase; font-weight: 700; padding: 3px 9px; border-radius: 999px; background: rgba(204, 125, 20, .16); color: var(--amber-hi); margin-left: auto; }
+.card.add { background: radial-gradient(500px 200px at 0 0, rgba(123, 37, 40, .35), transparent 70%), rgba(251, 238, 223, .03); border-color: rgba(204, 125, 20, .35); grid-column: span 2; }
+.addr { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.addr code { font: 700 26px var(--font); letter-spacing: .02em; color: var(--text); }
+.card ol { margin: 0; padding-left: 20px; color: var(--muted); display: flex; flex-direction: column; gap: 6px; font-size: 13px; }
+.dot.idle { background: var(--faint); box-shadow: none; }
+
+/* ---------- overlays ---------- */
+.drop { position: fixed; inset: 14px; z-index: 50; border: 2px dashed var(--amber); border-radius: 28px; background: rgba(10, 11, 15, .78); backdrop-filter: blur(14px); display: grid; place-items: center; text-align: center; opacity: 0; pointer-events: none; transition: opacity .2s; }
+.drop.on { opacity: 1; }
+.drop svg { width: 54px; height: 54px; color: var(--amber); }
+.drop h2 { margin: 12px 0 2px; font-size: 24px; }
+.drop p { margin: 0; color: var(--muted); }
+
+.tray { position: fixed; right: 24px; bottom: 24px; z-index: 40; width: 340px; display: flex; flex-direction: column; gap: 8px; }
+.up { padding: 12px 14px; border-radius: 16px; border: 1px solid var(--line-strong); background: rgba(22, 25, 34, .92); backdrop-filter: blur(16px); box-shadow: 0 18px 40px -16px rgba(0, 0, 0, .7); animation: rise .3s var(--ease); }
+.up .l { display: flex; justify-content: space-between; gap: 10px; font-size: 13px; font-weight: 600; }
+.up .l span:first-child { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.up .bar { height: 4px; border-radius: 4px; background: rgba(251, 238, 223, .1); margin-top: 9px; overflow: hidden; }
+.up .bar i { display: block; height: 100%; width: 0; background: var(--amber); transition: width .15s linear; }
+.up.done .bar i { background: var(--ok); width: 100% !important; }
+.up.fail .bar i { background: var(--danger); width: 100% !important; }
+@keyframes rise { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
+
+.toast { position: fixed; left: 50%; top: 22px; transform: translateX(-50%); z-index: 90; padding: 12px 20px; border-radius: 999px; border: 1px solid var(--line-strong); background: rgba(22, 25, 34, .96); font-weight: 600; font-size: 13px; animation: rise .3s var(--ease); }
+.toast.bad { border-color: rgba(239, 106, 99, .5); color: #ffb0ab; }
+
+dialog { border: 1px solid var(--line-strong); border-radius: 24px; background: var(--panel-2); color: var(--text); padding: 30px; width: min(440px, calc(100vw - 32px)); box-shadow: 0 40px 100px -20px rgba(0, 0, 0, .8); }
+dialog::backdrop { background: rgba(5, 6, 9, .66); backdrop-filter: blur(8px); }
+dialog h2 { margin: 0 0 6px; font-size: 22px; font-weight: 600; }
+dialog p { margin: 0 0 20px; color: var(--muted); }
+dialog .btns { display: flex; justify-content: flex-end; gap: 10px; margin-top: 22px; }
+
+.banner { margin: 0 36px; padding: 12px 18px; border-radius: 14px; background: rgba(239, 106, 99, .12); border: 1px solid rgba(239, 106, 99, .35); color: #ffb0ab; font-weight: 500; }
+.banner[hidden] { display: none; }
+
+/* ---------- tablet / phone ---------- */
+.tabs { display: none; }
+@media (max-width: 1180px) {
+  .app.has-detail { grid-template-columns: 248px minmax(0, 1fr) 0; }
+  .detail { position: fixed; right: 0; top: 0; bottom: 0; z-index: 30; width: 360px; max-width: 100vw; transform: translateX(100%); transition: transform .28s var(--ease); background: rgba(16, 18, 24, .96); }
+  .app.has-detail .detail { transform: none; box-shadow: -30px 0 80px -20px rgba(0, 0, 0, .8); }
+}
+@media (max-width: 820px) {
+  .app, .app.has-detail { grid-template-columns: minmax(0, 1fr); }
+  .side { display: none; }
+  .top { padding: 16px 16px 4px; }
+  .top .btn span { display: none; }
+  .top .btn { padding: 0; width: 44px; height: 44px; }
+  .scroll { padding: 4px 16px 110px; }
+  .banner { margin: 0 16px; }
+  .crumbs { font-size: 22px; }
+  .row { grid-template-columns: minmax(0, 1fr) 70px; gap: 10px; }
+  .row .c-by, .row .c-date { display: none; }
+  .head-actions { display: none; }
+  .card.add { grid-column: auto; }
+  .addr code { font-size: 20px; }
+  .detail { width: 100vw; top: auto; height: 82vh; border-radius: 26px 26px 0 0; transform: translateY(100%); }
+  .app.has-detail .detail { transform: none; }
+  .detail-in { width: 100%; }
+  .tabs { display: grid; grid-template-columns: repeat(3, 1fr); position: fixed; left: 0; right: 0; bottom: 0; z-index: 20; padding: 8px 8px calc(8px + env(safe-area-inset-bottom)); background: rgba(10, 11, 15, .86); backdrop-filter: blur(20px); border-top: 1px solid var(--line); }
+  .tabs button { background: none; border: 0; display: flex; flex-direction: column; align-items: center; gap: 4px; font-size: 11px; font-weight: 600; color: var(--muted); padding: 6px; }
+  .tabs button.active { color: var(--amber); }
+  .tray { left: 16px; right: 16px; width: auto; bottom: 86px; }
+}
+</style>
+
+</head>
+<body>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <defs>
+    <symbol id="i-folder" viewBox="0 0 24 24"><path d="M3 7.5A2.5 2.5 0 0 1 5.5 5H9l2 2.5h7.5A2.5 2.5 0 0 1 21 10v7.5a2.5 2.5 0 0 1-2.5 2.5h-13A2.5 2.5 0 0 1 3 17.5z"/></symbol>
+    <symbol id="i-files" viewBox="0 0 24 24"><path d="M14 3H7.5A2.5 2.5 0 0 0 5 5.5v13A2.5 2.5 0 0 0 7.5 21h9a2.5 2.5 0 0 0 2.5-2.5V8z"/><path d="M14 3v5h5"/></symbol>
+    <symbol id="i-activity" viewBox="0 0 24 24"><path d="M3 12h4l3-8 4 16 3-8h4"/></symbol>
+    <symbol id="i-monitor" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="12" rx="2.5"/><path d="M8 20h8M12 16v4"/></symbol>
+    <symbol id="i-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="6.5"/><path d="m20 20-4.2-4.2"/></symbol>
+    <symbol id="i-upload" viewBox="0 0 24 24"><path d="M12 16V4M7 9l5-5 5 5"/><path d="M4 16v2.5A1.5 1.5 0 0 0 5.5 20h13a1.5 1.5 0 0 0 1.5-1.5V16"/></symbol>
+    <symbol id="i-download" viewBox="0 0 24 24"><path d="M12 4v12M7 11l5 5 5-5"/><path d="M4 16v2.5A1.5 1.5 0 0 0 5.5 20h13a1.5 1.5 0 0 0 1.5-1.5V16"/></symbol>
+    <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
+    <symbol id="i-newfolder" viewBox="0 0 24 24"><path d="M3 7.5A2.5 2.5 0 0 1 5.5 5H9l2 2.5h7.5A2.5 2.5 0 0 1 21 10v7.5a2.5 2.5 0 0 1-2.5 2.5h-13A2.5 2.5 0 0 1 3 17.5z"/><path d="M12 11v5M9.5 13.5h5"/></symbol>
+    <symbol id="i-trash" viewBox="0 0 24 24"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 12a1.5 1.5 0 0 0 1.5 1.4h7a1.5 1.5 0 0 0 1.5-1.4L18 7M9 7V4.5h6V7"/></symbol>
+    <symbol id="i-pencil" viewBox="0 0 24 24"><path d="M4 20h4L19 9a2.8 2.8 0 0 0-4-4L4 16z"/><path d="m13.5 6.5 4 4"/></symbol>
+    <symbol id="i-x" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18"/></symbol>
+    <symbol id="i-copy" viewBox="0 0 24 24"><rect x="8" y="8" width="12" height="12" rx="2.5"/><path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2"/></symbol>
+    <symbol id="i-open" viewBox="0 0 24 24"><path d="M14 4h6v6M20 4l-9 9"/><path d="M18 14v4a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4"/></symbol>
+  </defs>
+</svg>
+
+<div class="app" id="app">
+  <aside class="side">
+    <div class="brand"><img src="data:image/webp;base64,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DKph0GRJ0mDEgJASAkBICQEgJASAkBICQEgGVTDoMiTpMGJASAkBICQEgJASAkBICQEgJAMqmHQZEnSYMSAkBICQEgJASAkBICQEgJARhYIukAL5c2VKrYy2h94c1hdJgxICQEgJASAkBICQEYoFfNHqNJ7lXf7fliQEgJASAkBICQEgJASAkBICQEgGVTDoMiTpMGJASAkBICQEgJASAkBICQEgJAMqmHQZEnSYMSAkBICQEgJASAkBICQEgJASAZP2cRWEgJASAkBICQEgJASAkBICQEgJASAjLhbtJsGM/gGofeHNYXSYMSAkBICQEgJASAkAyqYfZr5c7VYihQZrIYa+XO1WIoUGayGGvlztViKFBmshhr5c7VYihQZrIYa+XO1WIoUGayGGvlztViJ4zJASAkBICQEgJASAkBICQEgJASAkBICQEgJASAkBICQEgJASAkBICQEgJASAkBICQC4AAP7/26YAAAAwsc3gEtJbi2yglpLcW2UEtJCgVWNNM7MAAPUj/9DzIdxgAAAAAAAA8KTVyjgbFALfCSeYEAk5gUAVeCgDfx+BAYFbBquHwiEpRDNiHj4hmxDx8H7IwIAAAAAAAAAAAA==" alt="Artema"><span>Portal</span></div>
+    <button class="nav active" data-view="files"><svg class="i"><use href="#i-files"/></svg>Files</button>
+    <button class="nav" data-view="activity"><svg class="i"><use href="#i-activity"/></svg>Activity</button>
+    <button class="nav" data-view="computers"><svg class="i"><use href="#i-monitor"/></svg>Computers<span class="count" id="pc-count"></span></button>
+    <div class="side-label">Quick access</div>
+    <div class="quick" id="quick"></div>
+    <div class="side-foot">
+      <div class="who-line"><span class="dot" id="conn-dot"></span><span id="conn-text">Connected</span></div>
+      <div id="who-text"></div>
+      <button class="link" id="who-change">Change name</button>
+    </div>
+  </aside>
+
+  <main>
+    <header class="top">
+      <label class="search">
+        <svg class="i"><use href="#i-search"/></svg>
+        <input id="q" placeholder="Search drawings, files, folders" autocomplete="off" spellcheck="false">
+        <kbd>/</kbd>
+      </label>
+      <div class="spacer"></div>
+      <button class="btn" id="btn-new"><svg class="i"><use href="#i-newfolder"/></svg><span>New folder</span></button>
+      <button class="btn primary" id="btn-up"><svg class="i"><use href="#i-upload"/></svg><span>Upload</span></button>
+    </header>
+    <div class="banner" id="banner" hidden>Can't reach the Portal right now. Check that the main computer is on.</div>
+
+    <div class="scroll" id="scroll">
+      <section class="view" id="view-files">
+        <div class="head">
+          <div>
+            <div class="crumbs" id="crumbs"></div>
+            <div class="sub" id="files-sub"></div>
+          </div>
+          <div class="head-actions" id="host-actions"></div>
+        </div>
+        <div id="list"></div>
+      </section>
+
+      <section class="view" id="view-activity" hidden>
+        <div class="head"><div><div class="crumbs"><button>Activity</button></div><div class="sub">What's been happening across the shop</div></div></div>
+        <div id="feed"></div>
+      </section>
+
+      <section class="view" id="view-computers" hidden>
+        <div class="head"><div><div class="crumbs"><button>Computers</button></div><div class="sub">Everything connected to this Portal</div></div></div>
+        <div class="cards" id="cards"></div>
+      </section>
+    </div>
+  </main>
+
+  <aside class="detail" id="detail"><div class="detail-in" id="detail-in"></div></aside>
+</div>
+
+<nav class="tabs" id="tabs">
+  <button class="active" data-view="files"><svg class="i"><use href="#i-files"/></svg>Files</button>
+  <button data-view="activity"><svg class="i"><use href="#i-activity"/></svg>Activity</button>
+  <button data-view="computers"><svg class="i"><use href="#i-monitor"/></svg>Computers</button>
+</nav>
+
+<div class="drop" id="drop"><div><svg class="i"><use href="#i-upload"/></svg><h2>Drop to upload</h2><p id="drop-to"></p></div></div>
+<div class="tray" id="tray"></div>
+<input type="file" id="file" multiple hidden>
+
+<dialog id="dlg"><form method="dialog" id="dlg-form">
+  <h2 id="dlg-title"></h2><p id="dlg-text"></p>
+  <input class="field" id="dlg-input" autocomplete="off" spellcheck="false">
+  <div class="btns"><button type="button" class="btn" id="dlg-cancel">Cancel</button><button class="btn primary" id="dlg-ok">OK</button></div>
+</form></dialog>
+
+<script>(() => {
+  const n = Math.floor(Date.now() / 1000), m = s => n - s * 60;
+  const F = (name, path, size, ago, by) => ({ name, path, dir: false, size, mtime: m(ago), by });
+  const D = (name, path, ago) => ({ name, path, dir: true, size: 0, mtime: m(ago), by: '' });
+  const FILES = {
+    '': [D('Drawings', 'Drawings', 600), D('From CNC', 'From CNC', 45), D('Photos', 'Photos', 300), D('To CNC', 'To CNC', 3)],
+    'To CNC': [
+      F('Pivot_Door_96x48_Walnut.dxf', 'To CNC/Pivot_Door_96x48_Walnut.dxf', 184320, 3, 'Boss Office'),
+      F('Entry_Flush_Oak_Rev3.dxf', 'To CNC/Entry_Flush_Oak_Rev3.dxf', 96256, 41, 'Boss Office'),
+      F('Cut_Sheet_Oct23.pdf', 'To CNC/Cut_Sheet_Oct23.pdf', 412672, 95, 'Ben'),
+      F('Sidelite_Pair_Engraved.mpr', 'To CNC/Sidelite_Pair_Engraved.mpr', 22528, 260, 'Boss Office'),
+    ],
+    'From CNC': [
+      F('Pivot_Door_96x48_asbuilt.dxf', 'From CNC/Pivot_Door_96x48_asbuilt.dxf', 190112, 45, 'CNC Shop'),
+      F('Scrap_log.xlsx', 'From CNC/Scrap_log.xlsx', 33280, 1500, 'CNC Shop'),
+    ],
+    'Drawings': [F('Collection_2025_Overview.pdf', 'Drawings/Collection_2025_Overview.pdf', 2411520, 9000, 'Ben')],
+    'Photos': [F('Rail_and_stile_closeup.jpg', 'Photos/Rail_and_stile_closeup.jpg', 3145728, 2900, 'CNC Shop')],
+  };
+  const all = Object.values(FILES).flat().filter(i => !i.dir);
+  const json = o => new Response(JSON.stringify(o), { status: 200, headers: { 'Content-Type': 'application/json' } });
+  window.fetch = async (url, opt) => {
+    const u = new URL(url, location.href), p = u.pathname.replace('/api/', ''), q = u.searchParams;
+    if (p === 'info') return json({ app: 'Artema Portal', name: 'CNC Shop', local: true });
+    if (p === 'list') return json({ items: FILES[q.get('path') || ''] || [] });
+    if (p === 'search') { const t = q.get('q').toLowerCase().split(/[\s_.-]+/).filter(Boolean); return json({ items: all.filter(i => t.every(x => i.path.toLowerCase().includes(x))) }); }
+    if (p === 'devices') return json({ address: '192.168.1.20:8080', devices: [
+      { id: 'host', name: 'CNC Shop', host: true, online: true },
+      { id: 'a', name: 'Boss Office', online: true },
+      { id: 'b', name: 'Ben', online: true },
+      { id: 'c', name: 'Cutting Room PC', online: false, last: n - 5400 }] });
+    if (p === 'activity') return json({ items: [
+      { t: m(3), who: 'Boss Office', action: 'added', path: 'To CNC/Pivot_Door_96x48_Walnut.dxf' },
+      { t: m(41), who: 'Boss Office', action: 'added', path: 'To CNC/Entry_Flush_Oak_Rev3.dxf' },
+      { t: m(45), who: 'CNC Shop', action: 'added', path: 'From CNC/Pivot_Door_96x48_asbuilt.dxf' },
+      { t: m(95), who: 'Ben', action: 'updated', path: 'To CNC/Cut_Sheet_Oct23.pdf' },
+      { t: m(1500), who: 'CNC Shop', action: 'added', path: 'From CNC/Scrap_log.xlsx' }] });
+    return json({ ok: true });
+  };
+  try { localStorage.setItem('artema.who', 'CNC Shop'); } catch { }
+})();
+
+(() => {
+  const $ = (s, el = document) => el.querySelector(s);
+  const $$ = (s, el = document) => [...el.querySelectorAll(s)];
+  const esc = s => String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  const icon = n => `<svg class="i"><use href="#i-${n}"/></svg>`;
+
+  const S = { path: '', items: [], sel: null, view: 'files', q: '', who: '', info: null, snapshot: '', results: null };
+  const store = {
+    get(k) { try { return localStorage.getItem(k); } catch { return null; } },
+    set(k, v) { try { localStorage.setItem(k, v); } catch { } },
+  };
+
+  // ---------- api ----------
+  const hdrs = () => ({ 'X-Device': encodeURIComponent(S.who || 'Someone') });
+  async function api(path, body) {
+    const opt = body === undefined ? { headers: hdrs() } :
+      { method: 'POST', headers: { ...hdrs(), 'Content-Type': 'application/json' }, body: JSON.stringify(body) };
+    const r = await fetch('/api/' + path, opt);
+    const data = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(data.error || 'Something went wrong');
+    return data;
+  }
+  const q = p => encodeURIComponent(p);
+  const fileUrl = (p, inline) => `/api/file?path=${q(p)}${inline ? '&inline=1' : ''}`;
+
+  // ---------- formatting ----------
+  const fmtSize = n => n < 1024 ? n + ' B' : n < 1048576 ? (n / 1024).toFixed(n < 10240 ? 1 : 0) + ' KB' : n < 1073741824 ? (n / 1048576).toFixed(1) + ' MB' : (n / 1073741824).toFixed(1) + ' GB';
+  function ago(t) {
+    const d = Math.max(0, Date.now() / 1000 - t);
+    if (d < 45) return 'Just now';
+    if (d < 3600) return Math.round(d / 60) + ' min ago';
+    if (d < 86400) return Math.round(d / 3600) + ' hr ago';
+    const dt = new Date(t * 1000), now = new Date();
+    return dt.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: dt.getFullYear() === now.getFullYear() ? undefined : 'numeric' });
+  }
+  const ext = n => (n.includes('.') ? n.split('.').pop() : '').toLowerCase();
+  const KINDS = {
+    cad: ['dxf', 'dwg', 'dwf', 'step', 'stp', 'igs', 'iges', 'stl', 'skp', '3dm'],
+    pdf: ['pdf'],
+    img: ['png', 'jpg', 'jpeg', 'webp', 'gif', 'bmp', 'heic'],
+    prog: ['mpr', 'mprx', 'xcs', 'cix', 'nc', 'tap', 'gcode', 'cnc', 'ptp', 'pgm'],
+    sheet: ['xls', 'xlsx', 'csv', 'ods'],
+  };
+  const kindOf = n => { const e = ext(n); return Object.keys(KINDS).find(k => KINDS[k].includes(e)) || 'other'; };
+  function tile(it, big) {
+    if (it.dir) return `<div class="tile folder">${icon('folder')}</div>`;
+    const k = kindOf(it.name), e = ext(it.name).slice(0, 4).toUpperCase() || 'FILE';
+    if (k === 'img') return `<div class="tile img">${big ? '' : `<img loading="lazy" src="${fileUrl(it.path, true)}" alt="" onerror="this.remove()">`}${e}</div>`;
+    return `<div class="tile ${k}">${e}</div>`;
+  }
+  const initials = n => n.trim().split(/\s+/).map(w => w[0]).slice(0, 2).join('').toUpperCase() || '?';
+  const hue = n => { let h = 0; for (const c of n) h = (h * 31 + c.charCodeAt(0)) % 360; return h; };
+  const avatar = n => `<div class="avatar" style="background:hsl(${hue(n)} 38% 34%)">${esc(initials(n))}</div>`;
+
+  // ---------- toasts / dialogs ----------
+  function toast(msg, bad) {
+    const t = document.createElement('div');
+    t.className = 'toast' + (bad ? ' bad' : '');
+    t.textContent = msg;
+    document.body.append(t);
+    setTimeout(() => t.remove(), 3200);
+  }
+  function ask({ title, text = '', value = null, ok = 'OK', danger = false }) {
+    return new Promise(res => {
+      const d = $('#dlg'), inp = $('#dlg-input'), okb = $('#dlg-ok');
+      $('#dlg-title').textContent = title;
+      $('#dlg-text').textContent = text;
+      $('#dlg-text').style.display = text ? '' : 'none';
+      inp.style.display = value === null ? 'none' : '';
+      inp.value = value ?? '';
+      okb.textContent = ok;
+      okb.classList.toggle('danger', danger);
+      okb.classList.toggle('primary', !danger);
+      const done = v => { d.close(); cleanup(); res(v); };
+      const onOk = e => { e.preventDefault(); done(value === null ? true : inp.value.trim() || null); };
+      const onCancel = () => done(null);
+      const cleanup = () => { $('#dlg-form').removeEventListener('submit', onOk); $('#dlg-cancel').removeEventListener('click', onCancel); d.removeEventListener('cancel', onCancel); };
+      $('#dlg-form').addEventListener('submit', onOk);
+      $('#dlg-cancel').addEventListener('click', onCancel);
+      d.addEventListener('cancel', onCancel);
+      d.showModal();
+      if (value !== null) { inp.focus(); inp.select(); }
+    });
+  }
+
+  // ---------- who am I ----------
+  async function initWho() {
+    const params = new URLSearchParams(location.search);
+    if (params.get('as')) { store.set('artema.who', params.get('as')); history.replaceState(null, '', location.pathname); }
+    S.who = store.get('artema.who') || '';
+    if (!S.who && S.info?.local) { S.who = S.info.name; store.set('artema.who', S.who); }
+    if (!S.who) {
+      const v = await ask({ title: 'Welcome to Artema Portal', text: "What should we call you? It's shown next to the files you add.", value: '', ok: 'Continue' });
+      S.who = v || 'Guest';
+      store.set('artema.who', S.who);
+    }
+    $('#who-text').textContent = S.who;
+  }
+  $('#who-change').onclick = async () => {
+    const v = await ask({ title: 'Your name', value: S.who, ok: 'Save' });
+    if (v) { S.who = v; store.set('artema.who', v); $('#who-text').textContent = v; }
+  };
+
+  // ---------- navigation ----------
+  function setView(v) {
+    S.view = v;
+    $$('[data-view]').forEach(b => b.classList.toggle('active', b.dataset.view === v && !b.closest('.quick')));
+    $$('.view').forEach(el => el.hidden = el.id !== 'view-' + v);
+    if (v !== 'files') closeDetail();
+    refresh(true);
+  }
+  $$('[data-view]').forEach(b => b.onclick = () => { clearSearch(); setView(b.dataset.view); });
+  function go(path) { clearSearch(); S.path = path; S.sel = null; closeDetail(); setView('files'); }
+
+  function clearSearch() { S.q = ''; S.results = null; $('#q').value = ''; }
+
+  // ---------- files view ----------
+  async function loadFiles(force) {
+    const data = S.results ? { items: S.results } : await api('list?path=' + q(S.path));
+    const snap = JSON.stringify(data.items);
+    if (!force && snap === S.snapshot) return;
+    S.snapshot = snap;
+    S.items = data.items;
+    if (S.sel && !S.items.find(i => i.path === S.sel.path)) { S.sel = null; closeDetail(); }
+    renderFiles();
+  }
+  function renderCrumbs() {
+    if (S.results) return `<button>Results for “${esc(S.q)}”</button>`;
+    const parts = S.path ? S.path.split('/') : [];
+    let acc = '', html = `<button data-go="">All files</button>`;
+    parts.forEach(p => { acc += (acc ? '/' : '') + p; html += `<span class="sep">/</span><button data-go="${esc(acc)}">${esc(p)}</button>`; });
+    return html;
+  }
+  function renderFiles() {
+    $('#crumbs').innerHTML = renderCrumbs();
+    $$('#crumbs [data-go]').forEach(b => b.onclick = () => go(b.dataset.go));
+    const n = S.items.length, folders = S.items.filter(i => i.dir).length;
+    $('#files-sub').textContent = S.results ? `${n} match${n === 1 ? '' : 'es'}` : n ? `${n - folders} file${n - folders === 1 ? '' : 's'}${folders ? `, ${folders} folder${folders === 1 ? '' : 's'}` : ''}` : '';
+    const ha = $('#host-actions');
+    ha.innerHTML = S.info?.local && !S.results ? `<button class="btn" id="btn-reveal">${icon('open')}Show in Explorer</button>` : '';
+    if ($('#btn-reveal')) $('#btn-reveal').onclick = () => api('reveal', { path: S.path }).catch(e => toast(e.message, true));
+
+    const el = $('#list');
+    if (!n) {
+      el.innerHTML = S.results
+        ? `<div class="empty"><div class="ring">${icon('search')}</div><h3>Nothing found</h3><div>Try fewer words, or part of a name like “door” or “dxf”.</div></div>`
+        : `<div class="empty"><div class="ring">${icon('upload')}</div><h3>Nothing here yet</h3><div>Drag files in, or press Upload.</div><button class="btn primary big" id="empty-up">${icon('upload')}Upload files</button></div>`;
+      if ($('#empty-up')) $('#empty-up').onclick = () => $('#file').click();
+      return;
+    }
+    el.innerHTML = `<div class="table"><div class="row th"><div>Name</div><div class="c-by">Added by</div><div class="c-date">Modified</div><div class="num">Size</div></div>${S.items.map(rowHtml).join('')}</div>`;
+    $$('.row.item', el).forEach(r => {
+      const it = S.items[+r.dataset.i];
+      r.onclick = () => it.dir ? go(it.path) : select(it);
+    });
+  }
+  function rowHtml(it, i) {
+    const where = S.results ? it.path.split('/').slice(0, -1).join(' / ') : '';
+    return `<div class="row item${S.sel?.path === it.path ? ' sel' : ''}" data-i="${i}">
+      <div class="cell-name">${tile(it)}<div class="t"><div class="n">${esc(it.name)}</div>${where ? `<div class="p">${esc(where)}</div>` : ''}</div></div>
+      <div class="muted c-by">${esc(it.by || (it.dir ? '' : '—'))}</div>
+      <div class="muted c-date">${ago(it.mtime)}</div>
+      <div class="muted num">${it.dir ? '' : fmtSize(it.size)}</div></div>`;
+  }
+
+  // ---------- details panel ----------
+  function select(it) { S.sel = it; renderFiles(); openDetail(it); }
+  function openDetail(it) {
+    const k = kindOf(it.name);
+    const prev = k === 'img' ? `<img src="${fileUrl(it.path, true)}" alt="">` : tile(it, true);
+    const folder = it.path.split('/').slice(0, -1).join(' / ') || 'All files';
+    $('#detail-in').innerHTML = `
+      <button class="close" id="d-close" aria-label="Close">${icon('x')}</button>
+      <div class="preview">${prev}</div>
+      <h2>${esc(it.name)}</h2>
+      <dl class="facts">
+        <dt>Size</dt><dd>${fmtSize(it.size)}</dd>
+        <dt>Modified</dt><dd>${new Date(it.mtime * 1000).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' })}</dd>
+        <dt>Added by</dt><dd>${esc(it.by || 'Unknown')}</dd>
+        <dt>Location</dt><dd>${esc(folder)}</dd>
+      </dl>
+      <div class="actions">
+        <a class="btn primary big" href="${fileUrl(it.path)}" download>${icon('download')}Download</a>
+        <div class="pair"><button class="btn" id="d-rename">${icon('pencil')}Rename</button><button class="btn danger" id="d-del">${icon('trash')}Delete</button></div>
+      </div>`;
+    $('#app').classList.add('has-detail');
+    $('#d-close').onclick = () => { S.sel = null; closeDetail(); renderFiles(); };
+    $('#d-rename').onclick = () => renameItem(it);
+    $('#d-del').onclick = () => deleteItem(it);
+  }
+  function closeDetail() { $('#app').classList.remove('has-detail'); }
+  async function renameItem(it) {
+    const v = await ask({ title: 'Rename', value: it.name, ok: 'Save' });
+    if (!v || v === it.name) return;
+    const dir = it.path.split('/').slice(0, -1).join('/');
+    try { await api('move', { from: it.path, to: (dir ? dir + '/' : '') + v }); S.sel = null; closeDetail(); await loadFiles(true); }
+    catch (e) { toast(e.message, true); }
+  }
+  async function deleteItem(it) {
+    const ok = await ask({ title: `Delete “${it.name}”?`, text: 'It will disappear from every computer. The main computer keeps a safety copy for a while.', ok: 'Delete', danger: true });
+    if (!ok) return;
+    try { await api('delete', { path: it.path }); S.sel = null; closeDetail(); await loadFiles(true); toast('Deleted'); }
+    catch (e) { toast(e.message, true); }
+  }
+
+  $('#btn-new').onclick = async () => {
+    const v = await ask({ title: 'New folder', value: '', ok: 'Create' });
+    if (!v) return;
+    try { await api('mkdir', { path: (S.path ? S.path + '/' : '') + v }); await loadFiles(true); loadQuick(); }
+    catch (e) { toast(e.message, true); }
+  };
+
+  // ---------- search ----------
+  let st;
+  $('#q').addEventListener('input', e => {
+    clearTimeout(st);
+    const v = e.target.value.trim();
+    st = setTimeout(async () => {
+      S.q = v;
+      if (S.view !== 'files') setView('files');
+      if (!v) { S.results = null; closeDetail(); return loadFiles(true); }
+      try { S.results = (await api('search?q=' + q(v))).items; S.snapshot = ''; await loadFiles(true); } catch (err) { toast(err.message, true); }
+    }, 160);
+  });
+  document.addEventListener('keydown', e => {
+    const typing = /INPUT|TEXTAREA/.test(document.activeElement.tagName);
+    if (e.key === '/' && !typing) { e.preventDefault(); $('#q').focus(); }
+    if (e.key === 'Escape') {
+      if (document.activeElement === $('#q')) { clearSearch(); $('#q').blur(); loadFiles(true); }
+      else if (S.sel) { S.sel = null; closeDetail(); renderFiles(); }
+    }
+  });
+
+  // ---------- uploads ----------
+  const queue = []; let active = 0, uploadedAny = false;
+  function enqueue(entries) {
+    entries.forEach(e => queue.push(e));
+    pump();
+  }
+  function pump() {
+    while (active < 3 && queue.length) {
+      const { file, path } = queue.shift();
+      active++;
+      uploadOne(file, path).finally(() => {
+        active--; uploadedAny = true; pump();
+        if (!active && !queue.length) { loadFiles(true); loadQuick(); }
+      });
+    }
+  }
+  function uploadOne(file, path) {
+    const el = document.createElement('div');
+    el.className = 'up';
+    el.innerHTML = `<div class="l"><span>${esc(file.name)}</span><span>0%</span></div><div class="bar"><i></i></div>`;
+    $('#tray').append(el);
+    return new Promise(res => {
+      const x = new XMLHttpRequest();
+      x.open('PUT', `/api/file?path=${q(path)}&mtime=${Math.floor(file.lastModified / 1000)}`);
+      x.setRequestHeader('X-Device', encodeURIComponent(S.who || 'Someone'));
+      x.upload.onprogress = e => {
+        if (!e.lengthComputable) return;
+        const p = Math.round(e.loaded / e.total * 100);
+        $('i', el).style.width = p + '%'; $('.l span:last-child', el).textContent = p + '%';
+      };
+      x.onload = () => {
+        const ok = x.status < 300;
+        el.classList.add(ok ? 'done' : 'fail');
+        $('.l span:last-child', el).textContent = ok ? 'Done' : 'Failed';
+        setTimeout(() => el.remove(), ok ? 3000 : 8000);
+        res();
+      };
+      x.onerror = () => { el.classList.add('fail'); $('.l span:last-child', el).textContent = 'Failed'; setTimeout(() => el.remove(), 8000); res(); };
+      x.send(file);
+    });
+  }
+  const targetPath = name => (S.results ? '' : S.path ? S.path + '/' : '') + name;
+  $('#btn-up').onclick = () => $('#file').click();
+  $('#file').onchange = e => { enqueue([...e.target.files].map(f => ({ file: f, path: targetPath(f.name) }))); e.target.value = ''; };
+
+  // drag and drop, folders included
+  let depth = 0;
+  const drop = $('#drop');
+  const hasFiles = e => [...(e.dataTransfer?.types || [])].includes('Files');
+  window.addEventListener('dragenter', e => { if (!hasFiles(e)) return; e.preventDefault(); depth++; $('#drop-to').textContent = 'Into ' + (S.path || 'All files'); drop.classList.add('on'); });
+  window.addEventListener('dragover', e => { if (hasFiles(e)) e.preventDefault(); });
+  window.addEventListener('dragleave', e => { if (!hasFiles(e)) return; if (--depth <= 0) { depth = 0; drop.classList.remove('on'); } });
+  window.addEventListener('drop', async e => {
+    if (!hasFiles(e)) return;
+    e.preventDefault(); depth = 0; drop.classList.remove('on');
+    const items = [...e.dataTransfer.items].map(i => i.webkitGetAsEntry?.()).filter(Boolean);
+    const out = [];
+    const walk = async (entry, prefix) => {
+      if (entry.isFile) {
+        const file = await new Promise((ok, no) => entry.file(ok, no));
+        out.push({ file, path: targetPath(prefix + entry.name) });
+      } else {
+        const reader = entry.createReader();
+        let batch;
+        do { batch = await new Promise((ok, no) => reader.readEntries(ok, no)); for (const c of batch) await walk(c, prefix + entry.name + '/'); } while (batch.length);
+      }
+    };
+    if (items.length) for (const it of items) await walk(it, ''); else [...e.dataTransfer.files].forEach(f => out.push({ file: f, path: targetPath(f.name) }));
+    if (out.length) enqueue(out);
+  });
+
+  // ---------- quick access ----------
+  async function loadQuick() {
+    try {
+      const { items } = await api('list?path=');
+      $('#quick').innerHTML = items.filter(i => i.dir).map(i => `<button class="nav" data-q="${esc(i.path)}">${icon('folder')}${esc(i.name)}</button>`).join('');
+      $$('#quick [data-q]').forEach(b => b.onclick = () => go(b.dataset.q));
+    } catch { }
+  }
+
+  // ---------- activity ----------
+  const VERB = { added: 'added', updated: 'updated', deleted: 'deleted', renamed: 'renamed to', 'created folder': 'created folder' };
+  async function loadActivity() {
+    const { items } = await api('activity');
+    $('#feed').innerHTML = items.length ? `<div class="feed">${items.map((e, i) => `
+      <div class="ev" data-i="${i}">${avatar(e.who)}<div class="t"><div><b>${esc(e.who)}</b> ${VERB[e.action] || esc(e.action)} <b>${esc(e.path.split('/').pop())}</b></div>
+      <div class="muted">${esc(e.path.split('/').slice(0, -1).join(' / ') || 'All files')}</div></div><div class="when">${ago(e.t)}</div></div>`).join('')}</div>`
+      : `<div class="empty"><div class="ring">${icon('activity')}</div><h3>Quiet so far</h3><div>Uploads and changes will show up here.</div></div>`;
+    $$('#feed .ev').forEach(r => r.onclick = () => { const e = items[+r.dataset.i]; if (e.action !== 'deleted') go(e.path.split('/').slice(0, -1).join('/')); });
+  }
+
+  // ---------- computers ----------
+  async function loadComputers() {
+    const { devices, address } = await api('devices');
+    $('#pc-count').textContent = devices.length;
+    const cards = devices.map(d => `
+      <div class="card"><div class="top-line"><div class="pc">${icon('monitor')}</div>
+        <div><h3>${esc(d.name)}</h3><div class="state"><span class="dot ${d.online ? '' : 'idle'}"></span>${d.online ? 'Online' : d.last ? 'Seen ' + ago(d.last) : 'Offline'}</div></div>
+        ${d.host ? '<span class="badge">Main</span>' : ''}</div>
+        ${d.host ? '' : `<button class="btn danger" data-rm="${esc(d.id)}" data-name="${esc(d.name)}">${icon('trash')}Remove</button>`}</div>`).join('');
+    const addCard = `
+      <div class="card add"><h3>Add a computer</h3>
+        <div class="addr"><code id="addr">${esc(address)}</code><button class="btn" id="copy-addr">${icon('copy')}Copy</button></div>
+        <ol><li>On the new computer, open <b>Start Artema Portal</b>.</li><li>Choose <b>Connect to the main computer</b>.</li><li>It finds this one automatically, or type the address above.</li></ol></div>`;
+    $('#cards').innerHTML = cards + addCard;
+    $('#copy-addr').onclick = async () => { try { await navigator.clipboard.writeText(address); toast('Address copied'); } catch { toast(address); } };
+    $$('[data-rm]').forEach(b => b.onclick = async () => {
+      if (await ask({ title: `Remove ${b.dataset.name}?`, text: 'That computer will stop syncing until it connects again.', ok: 'Remove', danger: true })) {
+        await api('devices/remove', { id: b.dataset.rm }); loadComputers();
+      }
+    });
+  }
+
+  // ---------- refresh loop ----------
+  async function refresh(force) {
+    try {
+      if (S.view === 'files') await loadFiles(force);
+      else if (S.view === 'activity') await loadActivity();
+      else await loadComputers();
+      setConn(true);
+    } catch { setConn(false); }
+  }
+  function setConn(ok) {
+    $('#conn-dot').classList.toggle('off', !ok);
+    $('#conn-text').textContent = ok ? 'Connected' : 'Offline';
+    $('#banner').hidden = ok;
+  }
+  setInterval(() => { if (!document.hidden && !$('#dlg').open && !queue.length && !active && !S.results) refresh(false); }, 3000);
+
+  // ---------- start ----------
+  (async () => {
+    try { S.info = await api('info'); } catch { setConn(false); }
+    await initWho();
+    api('devices').then(d => $('#pc-count').textContent = d.devices.length).catch(() => { });
+    loadQuick();
+    refresh(true);
+  })();
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,265 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Artema Portal Setup</title>
+<link rel="icon" href="/assets/icon.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700&display=swap">
+<link rel="stylesheet" href="/theme.css">
+<style>
+  body { min-height: 100vh; display: grid; place-items: center; padding: 28px 16px; overflow-x: hidden; }
+  .wrap { width: min(560px, 100%); }
+  .logo { display: block; height: 30px; margin: 0 auto 44px; }
+  .step { display: none; animation: in .45s var(--ease); }
+  .step.on { display: block; }
+  @keyframes in { from { opacity: 0; transform: translateY(14px); } to { opacity: 1; transform: none; } }
+  .eyebrow { text-align: center; font-size: 11px; letter-spacing: .32em; text-transform: uppercase; color: var(--amber); font-weight: 600; margin-bottom: 14px; }
+  h1 { text-align: center; font-size: 36px; line-height: 1.1; font-weight: 600; letter-spacing: -.02em; margin: 0 0 12px; }
+  p.lead { text-align: center; color: var(--muted); font-size: 16px; margin: 0 auto 36px; max-width: 440px; }
+  .choices { display: grid; gap: 14px; }
+  .choice { display: flex; align-items: center; gap: 18px; width: 100%; padding: 22px; text-align: left; border-radius: 22px; border: 1px solid var(--line); background: linear-gradient(180deg, rgba(251,238,223,.06), rgba(251,238,223,.02)); transition: transform .2s var(--ease), border-color .2s, background .2s; }
+  .choice:hover { transform: translateY(-2px); border-color: rgba(204,125,20,.55); background: linear-gradient(180deg, rgba(204,125,20,.12), rgba(251,238,223,.02)); }
+  .choice .ic { width: 56px; height: 56px; border-radius: 16px; display: grid; place-items: center; background: rgba(204,125,20,.15); color: var(--amber-hi); flex: none; }
+  .choice .ic svg { width: 28px; height: 28px; }
+  .choice b { display: block; font-size: 17px; font-weight: 600; margin-bottom: 2px; }
+  .choice span { color: var(--muted); font-size: 13.5px; }
+  label.lab { display: block; font-size: 12px; letter-spacing: .12em; text-transform: uppercase; color: var(--faint); font-weight: 600; margin: 0 0 8px 4px; }
+  .form { display: grid; gap: 22px; }
+  .row-btns { display: flex; gap: 12px; justify-content: center; margin-top: 8px; flex-wrap: wrap; }
+  .err { min-height: 20px; text-align: center; color: #ffb0ab; font-size: 14px; margin-top: 4px; }
+  .found { display: grid; gap: 10px; }
+  .host { display: flex; align-items: center; gap: 14px; padding: 16px 18px; border-radius: 18px; border: 1px solid var(--line-strong); background: rgba(251,238,223,.05); cursor: pointer; text-align: left; width: 100%; transition: border-color .2s, background .2s; }
+  .host:hover, .host.sel { border-color: var(--amber); background: rgba(204,125,20,.1); }
+  .host b { display: block; font-size: 15px; } .host span { color: var(--muted); font-size: 13px; }
+  .scan { display: flex; align-items: center; justify-content: center; gap: 12px; color: var(--muted); padding: 10px; }
+  .spin { width: 18px; height: 18px; border-radius: 50%; border: 2px solid var(--line-strong); border-top-color: var(--amber); animation: sp .8s linear infinite; }
+  @keyframes sp { to { transform: rotate(360deg); } }
+  details { margin-top: -6px; } summary { cursor: pointer; color: var(--muted); font-size: 13px; text-align: center; list-style: none; } summary:hover { color: var(--text); }
+  details .field { margin-top: 12px; }
+  .checks { display: grid; gap: 14px; margin: 0 auto 34px; max-width: 360px; }
+  .check { display: flex; align-items: center; gap: 14px; color: var(--faint); font-size: 16px; transition: color .3s; }
+  .check .c { width: 26px; height: 26px; border-radius: 50%; border: 1.5px solid var(--line-strong); display: grid; place-items: center; transition: all .3s var(--ease); }
+  .check .c svg { width: 14px; height: 14px; opacity: 0; stroke: #1a1106; stroke-width: 3; fill: none; stroke-linecap: round; stroke-linejoin: round; }
+  .check.on { color: var(--text); } .check.on .c { background: var(--amber); border-color: var(--amber); } .check.on .c svg { opacity: 1; }
+  .big-addr { text-align: center; margin: 0 auto 30px; padding: 22px; border-radius: 22px; border: 1px solid rgba(204,125,20,.4); background: radial-gradient(400px 160px at 50% 0, rgba(123,37,40,.4), transparent 70%), rgba(251,238,223,.03); }
+  .big-addr small { display: block; color: var(--muted); font-size: 12px; letter-spacing: .16em; text-transform: uppercase; margin-bottom: 8px; }
+  .big-addr code { font: 700 34px var(--font); letter-spacing: .02em; }
+  .note { text-align: center; color: var(--muted); font-size: 13px; margin: -12px auto 28px; max-width: 420px; }
+  .status { display: flex; align-items: center; justify-content: center; gap: 10px; color: var(--muted); margin-bottom: 30px; }
+  .dot { width: 9px; height: 9px; border-radius: 50%; background: var(--ok); box-shadow: 0 0 0 4px rgba(95,208,139,.14); }
+  .dot.off { background: var(--danger); box-shadow: 0 0 0 4px rgba(239,106,99,.16); } .dot.warn { background: var(--amber); box-shadow: 0 0 0 4px rgba(204,125,20,.18); }
+  .back { display: block; margin: 22px auto 0; background: none; border: 0; color: var(--muted); font-size: 13px; } .back:hover { color: var(--text); }
+  .foot { text-align: center; color: var(--faint); font-size: 12px; margin-top: 48px; }
+  svg.i { width: 18px; height: 18px; stroke: currentColor; fill: none; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <img class="logo" src="/assets/logo-light.webp" alt="Artema">
+
+  <!-- welcome -->
+  <section class="step" id="s-welcome">
+    <div class="eyebrow">Portal setup</div>
+    <h1>Let's set up this computer.</h1>
+    <p class="lead">It takes about a minute. Which one is this?</p>
+    <div class="choices">
+      <button class="choice" id="pick-host"><div class="ic"><svg class="i" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="6" rx="2"/><rect x="3" y="14" width="18" height="6" rx="2"/><path d="M7 7h.01M7 17h.01"/></svg></div><div><b>This is the main computer</b><span>Holds the files. Other computers connect to it.</span></div></button>
+      <button class="choice" id="pick-join"><div class="ic"><svg class="i" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="12" rx="2.5"/><path d="M8 20h8M12 16v4"/></svg></div><div><b>Connect to the main computer</b><span>Get the shared folder on this desktop.</span></div></button>
+    </div>
+  </section>
+
+  <!-- host: name -->
+  <section class="step" id="s-host">
+    <div class="eyebrow">Main computer</div>
+    <h1>Name this computer.</h1>
+    <p class="lead">This is how it shows up for everyone else.</p>
+    <div class="form">
+      <div><label class="lab" for="host-name">Computer name</label><input class="field" id="host-name" placeholder="e.g. CNC Shop" maxlength="40" autocomplete="off"></div>
+      <details><summary>Advanced</summary><label class="lab" style="margin-top:14px" for="host-port">Port</label><input class="field" id="host-port" inputmode="numeric" value="8080"></details>
+    </div>
+    <div class="err" id="host-err"></div>
+    <div class="row-btns"><button class="btn primary big" id="host-go">Set up</button></div>
+    <button class="back" data-back>Back</button>
+  </section>
+
+  <!-- join: find -->
+  <section class="step" id="s-find">
+    <div class="eyebrow">Connect</div>
+    <h1>Find the main computer.</h1>
+    <p class="lead" id="find-lead">Looking on your network…</p>
+    <div class="scan" id="scan"><div class="spin"></div>Searching</div>
+    <div class="found" id="found"></div>
+    <div class="form" style="margin-top:22px">
+      <div><label class="lab" for="join-addr">Or type its address</label><input class="field" id="join-addr" placeholder="192.168.1.20:8080" autocomplete="off" spellcheck="false"></div>
+    </div>
+    <div class="err" id="find-err"></div>
+    <div class="row-btns"><button class="btn primary big" id="find-go">Continue</button></div>
+    <button class="back" data-back>Back</button>
+  </section>
+
+  <!-- join: name -->
+  <section class="step" id="s-name">
+    <div class="eyebrow">Almost there</div>
+    <h1>Name this computer.</h1>
+    <p class="lead" id="name-lead">Pick something people will recognise.</p>
+    <div class="form"><div><label class="lab" for="join-name">Computer name</label><input class="field" id="join-name" placeholder="e.g. Boss Office" maxlength="40" autocomplete="off"></div></div>
+    <div class="err" id="name-err"></div>
+    <div class="row-btns"><button class="btn primary big" id="name-go">Connect</button></div>
+    <button class="back" data-back>Back</button>
+  </section>
+
+  <!-- working -->
+  <section class="step" id="s-work">
+    <div class="eyebrow">One moment</div>
+    <h1 id="work-title">Setting things up…</h1>
+    <p class="lead">Nothing else to do.</p>
+    <div class="checks" id="checks"></div>
+  </section>
+
+  <!-- done -->
+  <section class="step" id="s-done">
+    <div class="eyebrow">All set</div>
+    <h1 id="done-title">You're connected.</h1>
+    <p class="lead" id="done-lead"></p>
+    <div id="done-extra"></div>
+    <div class="row-btns"><button class="btn primary big" id="done-open">Open Artema Portal</button><button class="btn big" id="done-folder">Show the folder</button></div>
+    <div class="foot">This starts automatically with Windows. You can close this tab.</div>
+  </section>
+
+  <!-- already set up -->
+  <section class="step" id="s-home">
+    <div class="eyebrow" id="home-eyebrow">Artema Portal</div>
+    <h1 id="home-title"></h1>
+    <div class="status"><span class="dot" id="home-dot"></span><span id="home-status"></span></div>
+    <div id="home-extra"></div>
+    <div class="row-btns"><button class="btn primary big" id="home-open">Open Artema Portal</button><button class="btn big" id="home-folder">Show the folder</button></div>
+    <button class="back" id="home-reset">Disconnect this computer</button>
+  </section>
+</div>
+
+<script>
+const $ = s => document.querySelector(s);
+const api = async (p, body) => {
+  const r = await fetch('/api/' + p, body === undefined ? {} : { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+  const d = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(d.error || 'Something went wrong');
+  return d;
+};
+const esc = s => String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+const TICK = '<svg viewBox="0 0 24 24"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>';
+let state = {}, history = [], portalUrl = '', chosenAddr = '', hostLabel = '';
+
+function show(id, push = true) {
+  const cur = document.querySelector('.step.on');
+  if (push && cur) history.push(cur.id);
+  document.querySelectorAll('.step').forEach(s => s.classList.toggle('on', s.id === id));
+  const f = document.querySelector('#' + id + ' input'); if (f) setTimeout(() => f.focus(), 60);
+}
+document.querySelectorAll('[data-back]').forEach(b => b.onclick = () => show(history.pop() || 's-welcome', false));
+const enter = (el, fn) => el.addEventListener('keydown', e => { if (e.key === 'Enter') fn(); });
+
+async function runChecks(labels, work) {
+  const box = $('#checks'); box.innerHTML = labels.map((l, i) => `<div class="check" id="ck${i}"><div class="c">${TICK}</div>${esc(l)}</div>`).join('');
+  show('s-work');
+  let res, err;
+  const job = work().then(r => res = r, e => err = e);
+  for (let i = 0; i < labels.length; i++) { await sleep(650); if (err) break; $('#ck' + i).classList.add('on'); }
+  await job;
+  if (err) throw err;
+  for (let i = 0; i < labels.length; i++) $('#ck' + i).classList.add('on');
+  await sleep(500);
+  return res;
+}
+
+// ---- host
+$('#pick-host').onclick = () => { $('#host-name').value = $('#host-name').value || state.hostname || ''; show('s-host'); };
+async function doHost() {
+  $('#host-err').textContent = '';
+  const name = $('#host-name').value.trim(), port = parseInt($('#host-port').value, 10);
+  if (!name) { $('#host-err').textContent = 'Give this computer a name.'; return; }
+  try {
+    const r = await runChecks(['Creating the Artema Portal folder', 'Starting the server', 'Setting it to start with Windows'], () => api('host', { name, port }));
+    portalUrl = r.portal_url;
+    $('#done-title').textContent = 'The Portal is live.';
+    $('#done-lead').textContent = 'On every other computer, open Start Artema Portal and choose “Connect to the main computer”.';
+    $('#done-extra').innerHTML = `<div class="big-addr"><small>Address of this computer</small><code>${esc(r.address)}</code></div>` +
+      (r.firewall ? '' : '<p class="note">If Windows asks about network access, choose <b>Allow</b> so other computers can connect.</p>');
+    show('s-done');
+  } catch (e) { show('s-host', false); $('#host-err').textContent = e.message; }
+}
+$('#host-go').onclick = doHost; enter($('#host-name'), doHost);
+
+// ---- join
+$('#pick-join').onclick = () => { show('s-find'); scan(); };
+async function scan() {
+  $('#scan').style.display = ''; $('#found').innerHTML = ''; $('#find-lead').textContent = 'Looking on your network…';
+  try {
+    const { found } = await api('scan', { port: 8080 });
+    $('#scan').style.display = 'none';
+    if (found.length) {
+      $('#find-lead').textContent = found.length === 1 ? 'Found it. Tap to continue.' : 'Found these. Pick the main computer.';
+      $('#found').innerHTML = found.map(h => `<button class="host" data-a="${esc(h.address)}" data-n="${esc(h.name)}"><div><b>${esc(h.name)}</b><span>${esc(h.address)}</span></div></button>`).join('');
+      document.querySelectorAll('.host').forEach(b => b.onclick = () => { chosenAddr = b.dataset.a; hostLabel = b.dataset.n; toName(); });
+    } else $('#find-lead').textContent = "Couldn't find it automatically. Type its address below.";
+  } catch { $('#scan').style.display = 'none'; $('#find-lead').textContent = 'Type the address of the main computer below.'; }
+}
+async function doFind() {
+  $('#find-err').textContent = '';
+  const a = $('#join-addr').value.trim();
+  if (!a) { $('#find-err').textContent = 'Enter the address, like 192.168.1.20:8080'; return; }
+  $('#find-go').disabled = true;
+  try {
+    const r = await api('probe', { address: a });
+    if (!r.ok) throw new Error("Couldn't reach it. Check the address and that the main computer is on.");
+    chosenAddr = r.address; hostLabel = r.name; toName();
+  } catch (e) { $('#find-err').textContent = e.message; }
+  $('#find-go').disabled = false;
+}
+$('#find-go').onclick = doFind; enter($('#join-addr'), doFind);
+function toName() { $('#name-lead').textContent = `Connecting to ${hostLabel}. Pick something people will recognise.`; $('#join-name').value = ''; show('s-name'); }
+async function doJoin() {
+  $('#name-err').textContent = '';
+  const name = $('#join-name').value.trim();
+  if (!name) { $('#name-err').textContent = 'Give this computer a name.'; return; }
+  try {
+    const r = await runChecks(['Connecting', 'Creating the Artema Portal folder on this desktop', 'Syncing your files', 'Setting it to start with Windows'], () => api('join', { address: chosenAddr, name }));
+    portalUrl = r.portal_url;
+    $('#done-title').textContent = "You're connected.";
+    $('#done-lead').textContent = `The Artema Portal folder is on this desktop and stays in step with ${r.host}.`;
+    $('#done-extra').innerHTML = '';
+    show('s-done');
+  } catch (e) { show('s-name', false); $('#name-err').textContent = e.message; }
+}
+$('#name-go').onclick = doJoin; enter($('#join-name'), doJoin);
+
+// ---- done / home
+const openPortal = () => { if (portalUrl) location.href = portalUrl; };
+const openFolder = () => api('open-folder', {}).catch(() => { });
+$('#done-open').onclick = openPortal; $('#done-folder').onclick = openFolder;
+$('#home-open').onclick = () => { location.href = state.portal_url; }; $('#home-folder').onclick = openFolder;
+$('#home-reset').onclick = async () => {
+  if (!confirm('Disconnect this computer? Your files stay where they are.')) return;
+  await api('reset', {}); state = await api('state'); show('s-welcome', false);
+};
+async function paintHome() {
+  state = await api('state');
+  if (!state.configured || !document.querySelector('#s-home.on')) return;
+  const host = state.role === 'host';
+  $('#home-title').textContent = host ? `${state.name} is the main computer.` : `${state.name} is connected.`;
+  const st = state.status || {};
+  $('#home-dot').className = 'dot ' + (st.state === 'ok' ? '' : st.state === 'offline' ? 'off' : 'warn');
+  $('#home-status').textContent = host ? `Serving files${state.devices ? ` · ${state.devices} computer${state.devices === 1 ? '' : 's'} connected` : ''}` : `${st.message || ''}${st.files ? ` · ${st.files} file${st.files === 1 ? '' : 's'}` : ''}`;
+  $('#home-extra').innerHTML = host ? `<div class="big-addr"><small>Address of this computer</small><code>${esc(state.address)}</code></div>` : '';
+}
+
+(async () => {
+  state = await api('state');
+  if (state.error) { show('s-welcome', false); return; }
+  if (state.configured) { show('s-home', false); await paintHome(); setInterval(paintHome, 2500); } else show('s-welcome', false);
+})();
+</script>
+</body>
+</html>
