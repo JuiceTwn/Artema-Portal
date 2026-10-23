@@ -1,0 +1,31 @@
+{
+  "name": "artema-portal",
+  "productName": "Artema Portal",
+  "version": "1.0.0",
+  "description": "Send and receive shop files between the offices and the CNC machines.",
+  "author": "Artema Door",
+  "main": "main.js",
+  "private": true,
+  "scripts": {
+    "start": "electron .",
+    "test": "node scripts/e2e.js",
+    "dist": "electron-builder --win zip"
+  },
+  "build": {
+    "appId": "com.artema.portal",
+    "productName": "Artema Portal",
+    "artifactName": "Artema-Portal-${version}-win.zip",
+    "directories": { "output": "dist" },
+    "asar": false,
+    "files": ["main.js", "src/**/*", "web/**/*", "assets/**/*", "package.json"],
+    "win": {
+      "target": [{ "target": "zip", "arch": ["x64"] }],
+      "icon": "assets/icon.ico",
+      "signAndEditExecutable": false
+    }
+  },
+  "devDependencies": {
+    "electron": "^45.0.0",
+    "electron-builder": "^26.15.3"
+  }
+}

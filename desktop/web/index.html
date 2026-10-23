@@ -1,0 +1,108 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0a0b0f">
+<title>Artema Portal</title>
+<link rel="icon" href="/assets/icon.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700&display=swap">
+<link rel="stylesheet" href="/theme.css">
+<link rel="stylesheet" href="/portal.css">
+</head>
+<body>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <defs>
+    <symbol id="i-folder" viewBox="0 0 24 24"><path d="M3 7.5A2.5 2.5 0 0 1 5.5 5H9l2 2.5h7.5A2.5 2.5 0 0 1 21 10v7.5a2.5 2.5 0 0 1-2.5 2.5h-13A2.5 2.5 0 0 1 3 17.5z"/></symbol>
+    <symbol id="i-files" viewBox="0 0 24 24"><path d="M14 3H7.5A2.5 2.5 0 0 0 5 5.5v13A2.5 2.5 0 0 0 7.5 21h9a2.5 2.5 0 0 0 2.5-2.5V8z"/><path d="M14 3v5h5"/></symbol>
+    <symbol id="i-activity" viewBox="0 0 24 24"><path d="M3 12h4l3-8 4 16 3-8h4"/></symbol>
+    <symbol id="i-monitor" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="12" rx="2.5"/><path d="M8 20h8M12 16v4"/></symbol>
+    <symbol id="i-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="6.5"/><path d="m20 20-4.2-4.2"/></symbol>
+    <symbol id="i-upload" viewBox="0 0 24 24"><path d="M12 16V4M7 9l5-5 5 5"/><path d="M4 16v2.5A1.5 1.5 0 0 0 5.5 20h13a1.5 1.5 0 0 0 1.5-1.5V16"/></symbol>
+    <symbol id="i-download" viewBox="0 0 24 24"><path d="M12 4v12M7 11l5 5 5-5"/><path d="M4 16v2.5A1.5 1.5 0 0 0 5.5 20h13a1.5 1.5 0 0 0 1.5-1.5V16"/></symbol>
+    <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
+    <symbol id="i-newfolder" viewBox="0 0 24 24"><path d="M3 7.5A2.5 2.5 0 0 1 5.5 5H9l2 2.5h7.5A2.5 2.5 0 0 1 21 10v7.5a2.5 2.5 0 0 1-2.5 2.5h-13A2.5 2.5 0 0 1 3 17.5z"/><path d="M12 11v5M9.5 13.5h5"/></symbol>
+    <symbol id="i-trash" viewBox="0 0 24 24"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 12a1.5 1.5 0 0 0 1.5 1.4h7a1.5 1.5 0 0 0 1.5-1.4L18 7M9 7V4.5h6V7"/></symbol>
+    <symbol id="i-pencil" viewBox="0 0 24 24"><path d="M4 20h4L19 9a2.8 2.8 0 0 0-4-4L4 16z"/><path d="m13.5 6.5 4 4"/></symbol>
+    <symbol id="i-x" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18"/></symbol>
+    <symbol id="i-copy" viewBox="0 0 24 24"><rect x="8" y="8" width="12" height="12" rx="2.5"/><path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2"/></symbol>
+    <symbol id="i-open" viewBox="0 0 24 24"><path d="M14 4h6v6M20 4l-9 9"/><path d="M18 14v4a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4"/></symbol>
+  </defs>
+</svg>
+
+<div class="app" id="app">
+  <aside class="side">
+    <div class="brand"><img src="/assets/logo-light.webp" alt="Artema"><span>Portal</span></div>
+    <button class="nav active" data-view="files"><svg class="i"><use href="#i-files"/></svg>Files</button>
+    <button class="nav" data-view="activity"><svg class="i"><use href="#i-activity"/></svg>Activity</button>
+    <button class="nav" data-view="computers"><svg class="i"><use href="#i-monitor"/></svg>Computers<span class="count" id="pc-count"></span></button>
+    <div class="side-label">Quick access</div>
+    <div class="quick" id="quick"></div>
+    <div class="side-foot">
+      <div class="who-line"><span class="dot" id="conn-dot"></span><span id="conn-text">Connected</span></div>
+      <div id="who-text"></div>
+      <button class="link" id="who-change">Change name</button>
+    </div>
+  </aside>
+
+  <main>
+    <header class="top">
+      <label class="search">
+        <svg class="i"><use href="#i-search"/></svg>
+        <input id="q" placeholder="Search drawings, files, folders" autocomplete="off" spellcheck="false">
+        <button type="button" class="clear" id="q-clear" hidden aria-label="Clear search"><svg class="i"><use href="#i-x"/></svg></button><kbd>/</kbd>
+      </label>
+      <div class="spacer"></div>
+      <button class="btn" id="btn-new" aria-label="New folder"><svg class="i"><use href="#i-newfolder"/></svg><span>New folder</span></button>
+      <button class="btn primary" id="btn-up" aria-label="Upload"><svg class="i"><use href="#i-upload"/></svg><span>Upload</span></button>
+    </header>
+    <div class="banner" id="banner" hidden>Can't reach the Portal right now. Check that the main computer is on.</div>
+
+    <div class="scroll" id="scroll">
+      <section class="view" id="view-files">
+        <div class="head">
+          <div>
+            <div class="crumbs" id="crumbs"></div>
+            <div class="sub" id="files-sub"></div>
+          </div>
+          <div class="head-actions" id="host-actions"></div>
+        </div>
+        <div id="list"></div>
+      </section>
+
+      <section class="view" id="view-activity" hidden>
+        <div class="head"><div><div class="crumbs"><button>Activity</button></div><div class="sub">What's been happening across the shop</div></div></div>
+        <div id="feed"></div>
+      </section>
+
+      <section class="view" id="view-computers" hidden>
+        <div class="head"><div><div class="crumbs"><button>Computers</button></div><div class="sub">Everything connected to this Portal</div></div></div>
+        <div class="cards" id="cards"></div>
+      </section>
+    </div>
+  </main>
+
+  <aside class="detail" id="detail"><div class="detail-in" id="detail-in"></div></aside>
+  <div class="scrim" id="scrim"></div>
+</div>
+
+<nav class="tabs" id="tabs">
+  <button class="active" data-view="files"><svg class="i"><use href="#i-files"/></svg>Files</button>
+  <button data-view="activity"><svg class="i"><use href="#i-activity"/></svg>Activity</button>
+  <button data-view="computers"><svg class="i"><use href="#i-monitor"/></svg>Computers</button>
+</nav>
+
+<div class="drop" id="drop"><div><svg class="i"><use href="#i-upload"/></svg><h2>Drop to upload</h2><p id="drop-to"></p></div></div>
+<div class="tray" id="tray"></div>
+<input type="file" id="file" multiple hidden>
+
+<dialog id="dlg"><form method="dialog" id="dlg-form">
+  <h2 id="dlg-title"></h2><p id="dlg-text"></p>
+  <input class="field" id="dlg-input" autocomplete="off" spellcheck="false">
+  <div class="btns"><button type="button" class="btn" id="dlg-cancel">Cancel</button><button class="btn primary" id="dlg-ok">OK</button></div>
+</form></dialog>
+
+<script src="/portal.js"></script>
+</body>
+</html>
