@@ -12,6 +12,7 @@ const {
   genPin, normPin, prettyPin, joinProof, fingerprintOfPem, loadOrCreateCert, COOKIE, LOCAL_HEADERS,
 } = require('./security');
 const { Store } = require('./store');
+const { RoleStore } = require('./roles');
 const { createPortalServer } = require('./server');
 const { Agent } = require('./agent');
 const { Beacon, probeUdp } = require('./discovery');
@@ -53,7 +54,7 @@ class Core {
     this.hooks = hooks;
     this.cfgPath = path.join(dataDir, 'config.json');
     this.cfg = readJson(this.cfgPath, {});
-    this.store = null; this.server = null; this.agent = null;
+    this.store = null; this.server = null; this.agent = null; this.roles = null;
     this.startError = '';
     this.localServer = null; this.localPort = 0;
     this.beacon = null; this.watchTimer = null; this.conflict = null;
@@ -138,8 +139,9 @@ class Core {
         if (!this.getPin()) this.saveCfg(this.withSecret(this.cfg, 'join_pin', genPin()));
         this.tls = await loadOrCreateCert(path.join(this.dataDir, 'tls'), { seal: t => this.seal(t), unseal: t => this.unseal(t), hostnames: [os.hostname()], ips: [lanIp()] });
         const port = parseInt(this.cfg.port, 10);
+        this.roles = new RoleStore(path.join(this.dataDir, 'portal.db'));
         this.server = createPortalServer(this.store, port, this.webDir, {
-          reveal: this.hooks.reveal, tls: this.tls, getPin: () => this.getPin(), rotatePin: () => this.rotatePin(), trustLoopback: () => this.trustLoopback,
+          roles: this.roles, reveal: this.hooks.reveal, tls: this.tls, getPin: () => this.getPin(), rotatePin: () => this.rotatePin(), trustLoopback: () => this.trustLoopback,
         });
         await new Promise((resolve, reject) => {
           this.server.once('error', reject);
@@ -202,6 +204,7 @@ class Core {
     if (this.server) { const s = this.server; await new Promise(r => { s.close(r); s.closeAllConnections && s.closeAllConnections(); }); }
     if (this.agent) this.agent.stop();
     this.server = this.agent = this.store = null;
+    if (this.roles) { this.roles.close(); this.roles = null; }
     this.tls = null;
   }
 

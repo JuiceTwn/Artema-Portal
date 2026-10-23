@@ -5,6 +5,10 @@ const {
   APP_NAME, VERSION, HttpError, lanIp, sendJson, readBody, mimeOf, serveStatic, sendError, guardRequest, cleanName, log,
 } = require('./util');
 const { FailLimiter, parseCookies, sessionCookie, joinProof, normPin, prettyPin, safeEqual, COOKIE, PORTAL_HEADERS } = require('./security');
+const { can, canAssign, isRole, rank } = require('./roles');
+
+// With no role store (a caller that doesn't pass one) nobody is promoted: every joined computer is `general`.
+const NO_ROLES = { get: () => 'general', set() { throw new HttpError(503, 'Roles are unavailable right now'); }, forget() { }, all: () => ({}) };
 
 const isLoopback = req => ['127.0.0.1', '::1', '::ffff:127.0.0.1'].includes(req.socket.remoteAddress);
 const bearer = req => { const h = String(req.headers.authorization || ''); return /^Bearer /i.test(h) ? h.slice(7).trim() : ''; };
@@ -15,19 +19,22 @@ const headerName = req => { try { return cleanName(decodeURIComponent(req.header
  *
  * Who may do what:
  *  - anyone on the network: load the Portal pages, ask who we are (/api/info), and try to join with the PIN
- *  - a joined computer or a signed-in browser: everything else (files, devices, activity)
- *  - this computer itself (loopback): everything, including the admin actions (remove/tag computers, new PIN)
+ *  - a joined computer or a signed-in browser: files, devices and activity, plus whatever its role allows (see roles.js)
+ *  - this computer itself (loopback): everything, as role `dev`
  *
- * hooks: { tls: {key, cert, fingerprint}, getPin(), rotatePin(), trustLoopback(), reveal(full) }
+ * hooks: { tls: {key, cert, fingerprint}, getPin(), rotatePin(), trustLoopback(), reveal(full), roles: RoleStore }
  */
 function createPortalServer(store, port, webDir, hooks = {}) {
   const tls = hooks.tls;
+  const roles = hooks.roles || NO_ROLES;
   const trustLoopback = () => (hooks.trustLoopback ? hooks.trustLoopback() : true);
   const pinGuess = new FailLimiter(10, 10 * 60 * 1000);          // 10 wrong PINs from one address, then a 10-minute pause
 
   function authenticate(req) {
-    if (isLoopback(req) && trustLoopback()) return { kind: 'host', name: store.hostName };
-    return store.authToken(bearer(req) || parseCookies(req.headers.cookie)[COOKIE]);
+    if (isLoopback(req) && trustLoopback()) return { kind: 'host', name: store.hostName, role: 'dev' };
+    const a = store.authToken(bearer(req) || parseCookies(req.headers.cookie)[COOKIE]);
+    // looked up on every request, so a role change (or removal) takes effect straight away
+    return a ? { ...a, role: a.kind === 'device' ? roles.get(a.id) : 'general' } : a;
   }
   function joinAllowed(b) {
     const pin = hooks.getPin && hooks.getPin();
@@ -79,18 +86,18 @@ function createPortalServer(store, port, webDir, hooks = {}) {
       if (!auth) throw new HttpError(401, 'Sign in required');
       const who = (auth.kind === 'host' ? headerName(req) : '') || auth.name || 'Someone';
       if (auth.id) store.touch(auth.id);
-      const admin = auth.kind === 'host';
+      const need = action => { if (!can(auth.role, action)) throw new HttpError(403, "This computer's role doesn't allow that"); };
 
       if (req.method === 'GET') {
-        if (ep === 'me') return sendJson(res, { kind: auth.kind, name: auth.name });
+        if (ep === 'me') return sendJson(res, { kind: auth.kind, name: auth.name, role: auth.role });
         if (ep === 'list') return sendJson(res, { path: store.safe(q.path).rel, items: store.list(q.path) });
         if (ep === 'tree') return sendJson(res, { items: store.tree() });
         if (ep === 'search') return sendJson(res, { items: store.search(q.q) });
-        if (ep === 'devices') return sendJson(res, { devices: store.deviceList(), address: `${lanIp()}:${port}` });
+        if (ep === 'devices') return sendJson(res, { devices: store.deviceList().map(d => ({ ...d, role: d.host ? 'dev' : roles.get(d.id) })), address: `${lanIp()}:${port}` });
         if (ep === 'activity') return sendJson(res, { items: store.activity.slice(-60).reverse() });
         if (ep === 'file') return sendFile(req, res, store, q);
         if (ep === 'pin') {
-          if (!admin) throw new HttpError(403, 'Only available on the main computer');
+          need('pin.view');
           return sendJson(res, { pin: prettyPin(hooks.getPin()) });
         }
       } else if (req.method === 'PUT' && ep === 'file') {
@@ -110,15 +117,30 @@ function createPortalServer(store, port, webDir, hooks = {}) {
         if (ep === 'mkdir') { store.mkdir(b.path, who); return sendJson(res, { ok: true }); }
         if (ep === 'delete') { store.delete(b.path, who); return sendJson(res, { ok: true }); }
         if (ep === 'move') { store.move(b.from, b.to, who); return sendJson(res, { ok: true }); }
-        // changing who is on the network is for whoever sits at the main computer
-        if (ep === 'devices/remove') { if (!admin) throw new HttpError(403, 'Only available on the main computer'); store.removeDevice(String(b.id)); return sendJson(res, { ok: true }); }
-        if (ep === 'devices/tag') { if (!admin) throw new HttpError(403, 'Only available on the main computer'); store.setTag(String(b.id), b.tag); return sendJson(res, { ok: true }); }
+        // changing who is on the network is for admins; nobody can touch a computer ranked above their own
+        if (ep === 'devices/remove') {
+          need('devices.remove');
+          if (rank(roles.get(String(b.id))) > rank(auth.role)) throw new HttpError(403, "This computer's role doesn't allow that");
+          store.removeDevice(String(b.id)); roles.forget(String(b.id));
+          return sendJson(res, { ok: true });
+        }
+        if (ep === 'devices/tag') { need('devices.tag'); store.setTag(String(b.id), b.tag); return sendJson(res, { ok: true }); }
+        if (ep === 'devices/role') {
+          need('devices.role');
+          const id = String(b.id), role = String(b.role);
+          if (!isRole(role)) throw new HttpError(400, 'Role must be general, admin or dev');
+          if (id === 'host' || !store.devices[id]) throw new HttpError(404, 'Not found');
+          if (!canAssign(auth.role, roles.get(id), role)) throw new HttpError(403, "This computer's role doesn't allow that");
+          roles.set(id, role, who);
+          log(`role: ${store.devices[id].name} is now ${role} (set by ${who})`);
+          return sendJson(res, { ok: true, role });
+        }
         if (ep === 'pin/rotate') {
-          if (!admin) throw new HttpError(403, 'Only available on the main computer');
+          need('pin.rotate');
           return sendJson(res, { ok: true, pin: prettyPin(hooks.rotatePin()) });
         }
         if (ep === 'reveal') {
-          if (!admin) throw new HttpError(403, 'Only available on the main computer');
+          need('files.reveal');
           const { full } = store.safe(b.path);
           if (hooks.reveal) hooks.reveal(full);
           return sendJson(res, { ok: true });
