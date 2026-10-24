@@ -94,6 +94,11 @@ function createPortalServer(store, port, webDir, hooks = {}) {
         if (ep === 'tree') return sendJson(res, { items: store.tree() });
         if (ep === 'search') return sendJson(res, { items: store.search(q.q) });
         if (ep === 'devices') return sendJson(res, { devices: store.deviceList().map(d => ({ ...d, role: d.host ? 'dev' : roles.get(d.id) })), address: `${lanIp()}:${port}` });
+        if (ep === 'devices/history') {
+          need('devices.role');
+          const names = Object.fromEntries(store.deviceList().map(d => [d.id, d.name]));
+          return sendJson(res, { items: roles.history ? roles.history(30).map(h => ({ ...h, name: names[h.device_id] || 'Removed computer' })) : [] });
+        }
         if (ep === 'activity') return sendJson(res, { items: store.activity.slice(-60).reverse() });
         if (ep === 'update/manifest' || ep === 'update/file') {
           // the client app this server was built with; any joined computer may ask for it

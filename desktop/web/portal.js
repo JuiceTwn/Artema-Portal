@@ -352,29 +352,79 @@
   }
 
   // ---------- computers ----------
+  // Mirrors roles.js: general < admin < dev, and nobody changes a computer, or hands out a role, above their own.
+  const ROLES = [['general', 'General', 'Files and the shop floor'], ['admin', 'Admin', 'Also manages computers and the PIN'], ['dev', 'Dev', 'Full control, including this computer']];
+  const rankOf = r => ROLES.findIndex(x => x[0] === r);
+  const roleName = r => (ROLES[rankOf(r)] || ROLES[0])[1];
+  const canAssignRole = (by, cur, next) => rankOf(by) >= 1 && rankOf(next) <= rankOf(by) && rankOf(cur) <= rankOf(by);
+  const roleSelect = (d, me) => `<select class="role-sel r-${d.role}" data-role="${esc(d.id)}" data-name="${esc(d.name)}" data-cur="${d.role}" aria-label="Access level for ${esc(d.name)}"${ROLES.some(r => canAssignRole(me, d.role, r[0]) && r[0] !== d.role) ? '' : ' disabled'}>${
+    ROLES.map(([k, label]) => `<option value="${k}"${k === d.role ? ' selected' : ''}${canAssignRole(me, d.role, k) ? '' : ' disabled'}>${label}</option>`).join('')}</select>`;
+
   async function loadComputers() {
     const { devices, address } = await api('devices');
-    const admin = !!S.info?.local;            // adding, tagging and removing computers is done at the main computer
+    if (document.activeElement?.matches?.('.role-sel')) return;          // don't pull a dropdown away while someone is choosing
+    const me = S.role = (await api('me')).role;
+    const manage = rankOf(me) >= 1;           // admins and the main computer run the suite; everyone else just sees who is connected
+    const host = !!S.info?.local;
     $('#pc-count').textContent = devices.length;
-    const cards = devices.map(d => `
-      <div class="card"><div class="top-line"><div class="pc">${icon('monitor')}</div>
-        <div><h3>${esc(d.name)}</h3>${d.tag ? `<span class="tagchip">${esc(d.tag)}</span>` : ''}<div class="state"><span class="dot ${d.online ? '' : 'idle'}"></span>${d.online ? 'Online' : d.last ? 'Seen ' + ago(d.last) : 'Offline'}</div></div>
-        ${d.host ? '<span class="badge">Main</span>' : ''}</div>
-        ${d.host || !admin ? '' : `<div class="pair2"><button class="btn" data-tag="${esc(d.id)}" data-cur="${esc(d.tag || '')}">${icon('pencil')}Tag</button><button class="btn danger" data-rm="${esc(d.id)}" data-name="${esc(d.name)}">${icon('trash')}Remove</button></div>`}</div>`).join('');
-    let pin = '';
-    if (admin) { try { pin = (await api('pin')).pin; } catch { /* shown next time */ } }
-    const addCard = `
-      <div class="card add"><h3>Add a computer</h3>
-        <div class="addr"><code id="addr">${esc(address)}</code><button class="btn" id="copy-addr">${icon('copy')}Copy</button></div>
-        ${pin ? `<div class="addr" style="margin-top:10px"><code id="pin">${esc(pin)}</code><button class="btn" id="new-pin">New PIN</button></div>` : ''}
-        <ol><li>On the new computer, open <b>Start Artema Portal</b>.</li><li>Choose <b>Connect to the main computer</b>.</li><li>It finds this one automatically${pin ? '. Enter the PIN above when it asks' : ', then asks for the PIN shown on the main computer'}.</li></ol></div>`;
-    $('#cards').innerHTML = cards + addCard;
+    $('#suite-title').textContent = manage ? 'Control suite' : 'Computers';
+    $('#suite-sub').textContent = manage ? 'Who is connected, and what each computer is allowed to do' : 'Everything connected to this Portal';
+
+    const joined = devices.filter(d => !d.host);
+    const count = r => joined.filter(d => d.role === r).length;
+    const tiles = [
+      ['Connected', `${devices.filter(d => d.online).length}<small> / ${devices.length}</small>`, 'online now'],
+      ['General', count('general'), 'shop floor'],
+      ['Admin', count('admin'), 'manage computers'],
+      ['Dev', count('dev') + (devices.some(d => d.host) ? 1 : 0), 'full control'],
+    ].map(([k, v, s]) => `<div class="tile-stat"><div class="k">${k}</div><div class="v">${v}</div><div class="s">${s}</div></div>`).join('');
+
+    const rows = devices.map(d => `
+      <div class="trow${d.online ? '' : ' off'}">
+        <div class="who"><div class="pc">${icon('monitor')}</div><div class="nm"><b>${esc(d.name)}</b>${d.host ? '<span class="badge">Main</span>' : ''}${d.tag ? `<span class="tagchip">${esc(d.tag)}</span>` : ''}
+          <div class="muted sm">${esc(d.ip || '')}${d.version ? ` · v${esc(d.version)}` : ''}</div></div></div>
+        <div class="state"><span class="dot ${d.online ? '' : 'idle'}"></span>${d.online ? 'Online' : d.last ? 'Seen ' + ago(d.last) : 'Offline'}</div>
+        <div class="lvl">${d.host ? '<span class="rolechip r-dev">Dev</span>' : manage ? roleSelect(d, me) : `<span class="rolechip r-${d.role}">${roleName(d.role)}</span>`}</div>
+        <div class="acts">${d.host || !manage || rankOf(d.role) > rankOf(me) ? '' : `<button class="btn" data-tag="${esc(d.id)}" data-cur="${esc(d.tag || '')}">${icon('pencil')}Tag</button><button class="btn danger" data-rm="${esc(d.id)}" data-name="${esc(d.name)}">${icon('trash')}Remove</button>`}</div>
+      </div>`).join('');
+
+    let pin = '', hist = [];
+    if (manage) {
+      try { pin = (await api('pin')).pin; } catch { /* shown next time */ }
+      try { hist = (await api('devices/history')).items; } catch { /* shown next time */ }
+    }
+    const levels = ROLES.map(([k, l, s]) => `<li><span class="rolechip r-${k}">${l}</span> ${s}</li>`).join('');
+    $('#suite').innerHTML = `
+      ${manage ? `<div class="stats">${tiles}</div>` : ''}
+      <div class="suite-grid">
+        <div class="panel">
+          <div class="panel-h"><h3>Computers</h3><span class="muted sm">${manage ? 'Change a computer’s access level from its menu' : ''}</span></div>
+          <div class="ttable">${rows}</div>
+        </div>
+        <div class="side-col">
+          <div class="panel add"><h3>Add a computer</h3>
+            <div class="addr"><code id="addr">${esc(address)}</code><button class="btn" id="copy-addr">${icon('copy')}Copy</button></div>
+            ${pin ? `<div class="addr" style="margin-top:10px"><code id="pin">${esc(pin)}</code><button class="btn" id="new-pin">New PIN</button></div>` : ''}
+            <ol><li>On the new computer, open <b>Start Artema Portal</b>.</li><li>Choose <b>Connect to the main computer</b>.</li><li>It finds this one automatically${pin ? '. Enter the PIN above when it asks' : ', then asks for the PIN shown on the main computer'}.</li></ol></div>
+          ${manage ? `<div class="panel"><h3>Access levels</h3><ul class="levels">${levels}</ul>
+            <div class="muted sm">New computers start as General. ${host ? '' : 'You can’t grant a level above your own. '}Changes apply immediately.</div></div>
+          <div class="panel"><h3>Recent changes</h3>${hist.length ? `<ul class="hist">${hist.slice(0, 8).map(h => `<li><b>${esc(h.name)}</b> ${roleName(h.old_role)} → ${roleName(h.new_role)}<span class="muted sm">${ago(h.at)}${h.by ? ' · ' + esc(h.by) : ''}</span></li>`).join('')}</ul>` : '<div class="muted sm">No access changes yet.</div>'}</div>` : ''}
+        </div>
+      </div>`;
     $('#copy-addr').onclick = async () => { try { await navigator.clipboard.writeText(address); toast('Address copied'); } catch { toast(address); } };
     if ($('#new-pin')) $('#new-pin').onclick = async () => {
       if (await ask({ title: 'Make a new PIN?', text: 'Computers that are already connected keep working. The old PIN stops working, and anyone signed in through a web browser will need the new one.', ok: 'New PIN', danger: true })) {
         try { await api('pin/rotate', {}); loadComputers(); } catch (e) { toast(e.message, true); }
       }
     };
+    $$('[data-role]').forEach(sel => sel.onchange = async () => {
+      const { role: id, name, cur } = sel.dataset, next = sel.value;
+      const up = rankOf(next) > rankOf(cur);
+      const ok = await ask({ title: `Make ${name} ${roleName(next)}?`, text: up ? `${name} will be able to do more: ${ROLES[rankOf(next)][2].toLowerCase()}.` : `${name} will lose some access straight away.`, ok: 'Change', danger: !up });
+      if (!ok) { sel.value = cur; return; }
+      try { await api('devices/role', { id, role: next }); toast(`${name} is now ${roleName(next)}`); } catch (e) { toast(e.message, true); }
+      loadComputers();
+    });
     $$('[data-tag]').forEach(b => b.onclick = async () => {
       const v = await ask({ title: 'Tag this computer', text: 'A short label like CNC, Office or Edgebander.', value: b.dataset.cur, ok: 'Save' });
       if (v !== null) { try { await api('devices/tag', { id: b.dataset.tag, tag: v }); loadComputers(); } catch (e) { toast(e.message, true); } }

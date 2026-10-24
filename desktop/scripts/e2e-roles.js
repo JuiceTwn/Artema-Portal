@@ -82,6 +82,8 @@ const mk = tag => {
     check('a general computer stays general', (await call(G, 'GET', 'me')).body.role === 'general');
     await call('host', 'POST', 'devices/remove', { id: ids.a });
     check('removing a computer clears its role', H.roles.get(ids.a) === 'general' && !(ids.a in H.roles.all()));
+    r = await call('host', 'GET', 'devices/history');
+    check('the main computer can read the role history, general cannot', r.status === 200 && r.body.items.length >= 5 && r.body.items[0].name && (await call(G, 'GET', 'devices/history')).status === 403, r);
     const log = H.roles.history(50);
     check('every change is on record, newest first', log.length >= 5 && log[0].device_id === ids.a && log[0].new_role === 'general', log);
 
