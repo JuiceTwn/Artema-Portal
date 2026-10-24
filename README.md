@@ -45,6 +45,16 @@ Two separate ideas, kept apart on purpose:
 - **Access level** (`general`, `admin`, `dev`) says what a computer is *allowed to do*: manage computers, see the PIN, and so on. `general` is the shop floor, `admin` is the office, `dev` is for development.
 - **Department** (planned) says what a person or computer *sees first*: the views and workflows that make sense for their work. It is for simplicity, not secrecy. Nothing is hidden because of a department.
 
+### Updates
+
+Installing a new **server** is the only manual step. The server build carries a copy of the client app, and every connected computer
+checks for it every few minutes, downloads only the files that changed, verifies each one, and installs it when nobody is looking at
+the window. If the new version crashes on start, the old one is put back.
+
+- Updates only ever come from the main computer a client joined (over its pinned connection), and only move forward. A client never installs the same or an older version.
+- If a new version needs a newer Electron runtime, clients show that it needs a full reinstall from the server's client zip instead of updating.
+- Running a newly downloaded copy over an older installed one closes the old one and replaces the install, so nothing stale is left behind.
+
 ## Install
 
 Build the zips (Windows):
@@ -57,8 +67,8 @@ npm run dist
 
 This makes two zips in `desktop/dist/`:
 
-- `server/Artema-Portal-Server-<version>-win.zip` for the one main computer
-- `client/Artema-Portal-<version>-win.zip` for every other computer
+- `server/Artema-Portal-Server-<version>-win.zip` for the one main computer (it also carries the client, for updates)
+- `client/Artema-Portal-<version>-win.zip` for every other computer, the first time only
 
 Unzip and run the `.exe`. The first run installs it for that Windows user, adds shortcuts, and starts with Windows. The server shows a PIN under **Setup and status**. A client finds the server on its own and asks for that PIN once.
 

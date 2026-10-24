@@ -33,6 +33,7 @@ class Store {
     this.activity = readJson(this.activityPath, []);
     this.sessions = readJson(this.sessionsPath, {});          // browser sign-ins: token hash -> { name, exp }
     this.seen = new Map();
+    this.versions = new Map();          // which app version each computer last said it runs (in memory: it re-reports within minutes)
     this.pruneSessions();
     this.reindex();
   }
@@ -271,6 +272,7 @@ class Store {
     return { id, token };
   }
   touch(id) { if (this.devices[id]) this.seen.set(id, nowSec()); }
+  setVersion(id, v) { if (this.devices[id] && /^[0-9A-Za-z.+-]{1,40}$/.test(String(v))) this.versions.set(id, String(v)); }
   removeDevice(id) { delete this.devices[id]; this.seen.delete(id); this.reindex(); writeJson(this.devicesPath, this.devices, 0o600); }
 
   deviceList() {
@@ -278,7 +280,7 @@ class Store {
     const t = nowSec();
     for (const [id, d] of Object.entries(this.devices)) {
       const last = this.seen.get(id);
-      out.push({ id, name: d.name, ip: d.ip || '', tag: d.tag || '', host: false, online: !!(last && t - last < ONLINE_SECONDS), last: last ? Math.floor(last) : null });
+      out.push({ id, name: d.name, ip: d.ip || '', tag: d.tag || '', version: this.versions.get(id) || '', host: false, online: !!(last && t - last < ONLINE_SECONDS), last: last ? Math.floor(last) : null });
     }
     return out;
   }

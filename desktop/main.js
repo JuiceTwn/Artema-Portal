@@ -3,8 +3,11 @@ const { app, BrowserWindow, Tray, Menu, Notification, shell, nativeImage, safeSt
 const fs = require('fs');
 const path = require('path');
 const { execFile } = require('child_process');
+const os = require('os');
+const { spawn } = require('child_process');
 const { Core } = require('./src/core');
 const { setLogFile, log } = require('./src/util');
+const { noteVersion, cleanUpdateLeftovers, stopInstalledCopies } = require('./src/housekeeping');
 
 // Which build this is is decided when it is built (package.json "artemaEdition"), never by anything the app finds at run time:
 // the server build is always the main computer, the client build never is. ARTEMA_EDITION is for running from source.
@@ -23,7 +26,16 @@ app.setPath('userData', process.env.ARTEMA_DATA || path.join(app.getPath('appDat
 process.on('uncaughtException', e => log('uncaught: ' + (e && e.stack || e)));
 process.on('unhandledRejection', e => log('unhandled rejection: ' + (e && e.stack || e)));
 
-let core = null, win = null, tray = null, quitting = false, toldAboutTray = false;
+let core = null, win = null, tray = null, quitting = false, toldAboutTray = false, updating = false;
+
+// What the packaged app knows about itself, for updates. The server build carries the client app in resources/update;
+// connecting computers fetch it from there. Empty when run from source. The ARTEMA_UPDATE_* switches are for automated tests only.
+const appInfo = app.isPackaged ? {
+  version: app.getVersion(), electron: process.versions.electron, appDir: path.join(process.resourcesPath, 'app'),
+  updateDir: IS_SERVER ? path.join(process.resourcesPath, 'update') : null,
+  updateFirstMs: process.env.ARTEMA_UPDATE_FIRST_MS ? parseInt(process.env.ARTEMA_UPDATE_FIRST_MS, 10) : undefined,
+  updateEveryMs: process.env.ARTEMA_UPDATE_EVERY_MS ? parseInt(process.env.ARTEMA_UPDATE_EVERY_MS, 10) : undefined,
+} : {};
 const asset = n => path.join(__dirname, 'assets', n);
 
 // ---- notifications
@@ -84,6 +96,7 @@ function createWindow() {
     if (quitting) return;
     e.preventDefault();
     win.hide();
+    setImmediate(maybeApplyUpdate);              // nobody is looking at the window now: a waiting update can install
     if (!toldAboutTray) {
       toldAboutTray = true;
       new Notification({ title: 'Artema Portal is still running', body: 'It keeps syncing in the background. Use the tray icon to open or quit.', icon: asset('icon.png') }).show();
@@ -108,7 +121,9 @@ function showWindow() {
 // ---- tray
 function rebuildTray() {
   if (!tray) return;
+  const pending = core.pendingUpdate();
   tray.setContextMenu(Menu.buildFromTemplate([
+    ...(pending ? [{ label: `Restart to install version ${pending.version}`, click: () => applyUpdate() }, { type: 'separator' }] : []),
     { label: 'Open Artema Portal', click: () => { showWindow(); if (core.configured) load(targetUrl()).catch(() => { }); } },
     { label: 'Show the Portal folder', enabled: core.configured, click: () => shell.openPath(core.folder) },
     { label: 'Setup and status', click: () => { showWindow(); win.loadURL(core.localUrl('/')); } },
@@ -129,6 +144,33 @@ async function quit() {
   quitting = true;
   try { await core.shutdown(); } catch { /* exiting anyway */ }
   app.quit();
+}
+
+// ---- updates from the main computer
+// A complete new copy of the app is already waiting next to the running one. Installing it means quitting, so it happens when
+// nobody is looking at the window; a small helper (src/update-helper.js) swaps the folders, starts the new version, and goes
+// back to the old one if the new one crashes.
+const windowVisible = () => !!(win && !win.isDestroyed() && win.isVisible());
+function onUpdateReady(info) {
+  rebuildTray();
+  if (windowVisible()) notify('Update ready', `Version ${info.version} installs as soon as you close the window.`);
+  else applyUpdate();
+}
+function maybeApplyUpdate() { if (core && core.pendingUpdate() && !windowVisible()) applyUpdate(); }
+async function applyUpdate() {
+  const info = core && core.pendingUpdate();
+  if (!info || updating) return;
+  updating = true;
+  try {
+    const helper = path.join(os.tmpdir(), `artema-update-${process.pid}-${Date.now()}.js`);
+    fs.copyFileSync(path.join(__dirname, 'src', 'update-helper.js'), helper);          // run from outside the folder it is about to replace
+    const job = { pid: process.pid, appDir: info.appDir, stageDir: info.stageDir, oldDir: info.appDir + '.old', exe: process.execPath, args: ['--background'], version: info.version, logFile: path.join(app.getPath('userData'), 'update.log') };
+    log(`restarting to install version ${info.version}`);
+    spawn(process.execPath, [helper, JSON.stringify(job)], { detached: true, stdio: 'ignore', windowsHide: true, env: { ...process.env, ELECTRON_RUN_AS_NODE: '1' } }).unref();
+    quitting = true;
+    try { await core.shutdown(); } catch { /* exiting anyway */ }
+    app.exit(0);
+  } catch (e) { updating = false; log(`could not start the update: ${e.message}`); }
 }
 
 // ---- self-install
@@ -152,15 +194,18 @@ async function ensureInstalled() {
   const splash = new BrowserWindow({ width: 440, height: 220, frame: false, resizable: false, backgroundColor: '#0a0b0f', alwaysOnTop: true, icon: asset('icon.png') });
   splash.loadURL('data:text/html;charset=utf-8,' + encodeURIComponent(
     '<body style="margin:0;background:#0a0b0f;color:#f6efe6;font:600 18px Segoe UI,sans-serif;display:grid;place-items:center;height:100vh;letter-spacing:.02em">Installing Artema Portal…</body>'));
+  const exe = path.join(target, path.basename(process.execPath));
   try {
+    await stopInstalledCopies(exe);          // an older version still sitting in the tray would hold the files (and the lock) we need
     fs.mkdirSync(target, { recursive: true });
+    // replace the app wholesale so no file of an older version can linger and mix with the new one
+    for (const leftover of ['app', 'app.old', 'app.update', 'app.update.json', 'app.failed']) fs.rmSync(path.join(target, 'resources', leftover), { recursive: true, force: true });
     fs.cpSync(here, target, { recursive: true, force: true });
   } catch (e) {
     log('self-install failed, running in place: ' + e.message);
     splash.close();
     return false;
   }
-  const exe = path.join(target, path.basename(process.execPath));
   makeShortcuts(exe);
   app.releaseSingleInstanceLock();
   require('child_process').spawn(exe, process.argv.slice(1), { detached: true, stdio: 'ignore', cwd: target }).unref();
@@ -186,6 +231,7 @@ const hooks = {
   openFolder: f => shell.openPath(f),
   onConflict: c => notify('Two main computers found', `“${c.name}” (${c.address}) is also acting as a main computer. Open Setup and status to sort it out.`),
   onRelocated: () => notify('Reconnected', 'The main computer changed address. Artema Portal followed it.'),
+  onUpdateReady,
   openFirewall: port => new Promise(resolve => {
     if (process.platform !== 'win32') return resolve(true);
     const rule = (name, proto, p) => new Promise(r => execFile('netsh', ['advfirewall', 'firewall', 'add', 'rule', `name=${name}`, 'dir=in', 'action=allow',
@@ -196,7 +242,13 @@ const hooks = {
   afterReset: () => { applyLoginItem(false); rebuildTray(); },
 };
 
-if (!app.requestSingleInstanceLock()) {
+// Another copy already running normally means "just show it". The exception is a freshly downloaded copy (not the installed one):
+// that is someone installing a new version, so it goes on to replace the old one, which it closes first.
+const runningFromInstall = () => path.resolve(path.dirname(process.execPath)).toLowerCase() === path.resolve(installDir()).toLowerCase();
+const hasLock = app.requestSingleInstanceLock();
+const installing = !hasLock && app.isPackaged && process.platform === 'win32' && !runningFromInstall() && !(process.env.ARTEMA_DATA && !process.env.ARTEMA_INSTALL_DIR);
+
+if (!hasLock && !installing) {
   app.quit();
 } else {
   app.on('second-instance', (_e, argv) => { if (!argv.includes('--background')) showWindow(); });
@@ -206,10 +258,19 @@ if (!app.requestSingleInstanceLock()) {
     session.defaultSession.setPermissionRequestHandler((_wc, _perm, cb) => cb(false));       // pages never get camera, location, notifications...
     setLogFile(path.join(app.getPath('userData'), 'portal.log'));
     if (await ensureInstalled()) return;
+    if (!hasLock) { app.quit(); return; }          // could not install over the running copy: leave it alone
     core = new Core({
       dataDir: app.getPath('userData'), webDir: path.join(__dirname, 'web'),
-      desktopDir: process.env.ARTEMA_DESKTOP || app.getPath('desktop'), hooks, edition: EDITION,
+      desktopDir: process.env.ARTEMA_DESKTOP || app.getPath('desktop'), hooks, edition: EDITION, app: appInfo,
     });
+    const ran = noteVersion(app.getPath('userData'), app.getVersion());          // first run of a new version: tidy up after the old one
+    if (app.isPackaged) {
+      cleanUpdateLeftovers(appInfo.appDir, app.getVersion());
+      if (ran.changed) {
+        log(`version ${ran.previous || '(first run)'} -> ${app.getVersion()}`);
+        if (runningFromInstall()) makeShortcuts(process.execPath);          // shortcuts always point at the program that is installed now
+      }
+    }
     await core.startLocalServer(parseInt(process.env.ARTEMA_LOCAL_PORT, 10) || 0);   // env switches are for automated tests only
     await core.startRole();
     await core.ensureServer();          // the server build needs no setup: it simply becomes the main computer

@@ -22,7 +22,7 @@ const headerName = req => { try { return cleanName(decodeURIComponent(req.header
  *  - a joined computer or a signed-in browser: files, devices and activity, plus whatever its role allows (see roles.js)
  *  - this computer itself (loopback): everything, as role `dev`
  *
- * hooks: { tls: {key, cert, fingerprint}, getPin(), rotatePin(), trustLoopback(), reveal(full), roles: RoleStore }
+ * hooks: { tls: {key, cert, fingerprint}, getPin(), rotatePin(), trustLoopback(), reveal(full), roles: RoleStore, update: UpdateSource }
  */
 function createPortalServer(store, port, webDir, hooks = {}) {
   const tls = hooks.tls;
@@ -95,6 +95,17 @@ function createPortalServer(store, port, webDir, hooks = {}) {
         if (ep === 'search') return sendJson(res, { items: store.search(q.q) });
         if (ep === 'devices') return sendJson(res, { devices: store.deviceList().map(d => ({ ...d, role: d.host ? 'dev' : roles.get(d.id) })), address: `${lanIp()}:${port}` });
         if (ep === 'activity') return sendJson(res, { items: store.activity.slice(-60).reverse() });
+        if (ep === 'update/manifest' || ep === 'update/file') {
+          // the client app this server was built with; any joined computer may ask for it
+          const m = hooks.update && hooks.update.manifest();
+          if (!m) throw new HttpError(404, 'No update');
+          if (ep === 'update/manifest') { if (auth.id) store.setVersion(auth.id, q.v); return sendJson(res, m); }
+          const f = hooks.update.file(String(q.path || ''));
+          if (!f) throw new HttpError(404, 'Not found');
+          res.writeHead(200, { 'Content-Type': 'application/octet-stream', 'Content-Length': f.size });
+          fs.createReadStream(f.full).on('error', () => res.destroy()).pipe(res);
+          return;
+        }
         if (ep === 'file') return sendFile(req, res, store, q);
         if (ep === 'pin') {
           need('pin.view');

@@ -40,6 +40,20 @@ const newCert = async c => { await c.stopRole(); fs.rmSync(path.join(c.dataDir, 
     r = await attempt(C3.autoSetup('AAAAA-AAAAA'));
     check('two main computers: a wrong PIN still gets the plain PIN message', !r.ok && /PIN/.test(r.message) && !C3.configured, r);
 
+    // ---- a pinned connection talks to the pinned certificate and to nothing else
+    // (Electron's TLS library does not accept a self-signed server certificate as a trust anchor, so the pin is an exact comparison)
+    const { loadOrCreateCert } = require('../src/security'), { request, readAll } = require('../src/util'), tlsLib = require('tls');
+    const rogue = await loadOrCreateCert(path.join(T, 'rogue'), {});
+    let leaked = '';
+    const rogueServer = tlsLib.createServer({ key: rogue.key, cert: rogue.cert }, s => { s.on('data', d => { leaked += d; }); s.on('error', () => { }); });
+    await new Promise(res => rogueServer.listen(0, '127.0.0.1', res));
+    const rogueErr = await request('GET', `https://127.0.0.1:${rogueServer.address().port}/api/x`, { headers: { Authorization: 'Bearer SECRET-TOKEN' }, ca: A.tls.cert, timeout: 4000 }).then(() => null, e => e);
+    await sleep(300); rogueServer.close();
+    check('a pinned connection refuses any other certificate', rogueErr && rogueErr.code === 'CERT_MISMATCH', rogueErr && rogueErr.code);
+    check('...and never sends it the request or the token', leaked === '', leaked);
+    const pinnedOk = await request('GET', `https://${addrA}/api/info`, { ca: A.tls.cert, timeout: 4000 });
+    check('...but talks normally to the pinned one', pinnedOk.statusCode === 200 && JSON.parse((await readAll(pinnedOk)).toString()).name === 'Host A');
+
     // ---- a main computer that gets a new certificate in the middle of a join
     const realProbe = C3.probe.bind(C3);
     let swaps = 0;

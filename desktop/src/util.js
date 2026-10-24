@@ -4,6 +4,7 @@ const path = require('path');
 const os = require('os');
 const http = require('http');
 const https = require('https');
+const tls = require('tls');
 const { execFile } = require('child_process');
 
 const APP_NAME = 'Artema Portal';
@@ -67,6 +68,32 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
  *    why the main computer can change address without breaking anything.
  *  - neither: first contact only (finding a main computer, learning its certificate). Nothing secret is sent that way.
  */
+/**
+ * An agent that connects only to the one pinned certificate. The check is a plain comparison of the certificate's SHA-256, made
+ * as soon as the handshake finishes and BEFORE the request is released, so nothing (the token included) is ever sent to anything
+ * else. It does not lean on certificate-chain rules: Electron's TLS library refuses to treat a self-signed server certificate as a
+ * trust anchor, which is how pinning with `ca` works in plain Node but fails in the packaged app.
+ */
+function pinnedAgent(pem) {
+  const crypto = require('crypto');
+  const sha = der => crypto.createHash('sha256').update(der).digest('hex');
+  const want = sha(new crypto.X509Certificate(pem).raw);
+  const agent = new https.Agent({ keepAlive: false });
+  agent.createConnection = (options, cb) => {
+    let done = false;
+    const finish = (err, sock) => { if (!done) { done = true; cb(err, sock); } };
+    const sock = tls.connect({ host: options.hostname || options.host, port: options.port, minVersion: 'TLSv1.2', rejectUnauthorized: false });
+    sock.once('secureConnect', () => {
+      let got = '';
+      try { const c = sock.getPeerCertificate(); got = c && c.raw ? sha(c.raw) : ''; } catch { /* no certificate */ }
+      if (got && got === want) finish(null, sock);
+      else { sock.destroy(); finish(Object.assign(new Error('the certificate is not the one that was pinned'), { code: 'CERT_MISMATCH' })); }
+    });
+    sock.once('error', e => finish(e));
+    return undefined;          // the connection is handed over through the callback, once it has been checked
+  };
+  return agent;
+}
 function request(method, urlStr, { headers = {}, body = null, timeout = 15000, ca = null } = {}) {
   return new Promise((resolve, reject) => {
     const u = new URL(urlStr);
@@ -74,7 +101,7 @@ function request(method, urlStr, { headers = {}, body = null, timeout = 15000, c
     const opts = { method, hostname: u.hostname, port: u.port || (secure ? 443 : 80), path: u.pathname + u.search, headers, agent: false };
     if (secure) {
       opts.minVersion = 'TLSv1.2';
-      if (ca) { opts.ca = ca; opts.rejectUnauthorized = true; opts.checkServerIdentity = () => undefined; }      // verification stays on even if the environment tries to turn it off
+      if (ca) opts.agent = pinnedAgent(ca);          // only the exact certificate that was pinned gets to see this request
       else opts.rejectUnauthorized = false;
     }
     const req = (secure ? https : http).request(opts, resolve);
@@ -101,6 +128,7 @@ function readAll(res) {
   });
 }
 const TLS_IDENTITY_ERRORS = new Set([
+  'CERT_MISMATCH',
   'DEPTH_ZERO_SELF_SIGNED_CERT', 'SELF_SIGNED_CERT_IN_CHAIN', 'UNABLE_TO_VERIFY_LEAF_SIGNATURE', 'UNABLE_TO_GET_ISSUER_CERT', 'UNABLE_TO_GET_ISSUER_CERT_LOCALLY',
   'CERT_HAS_EXPIRED', 'CERT_NOT_YET_VALID', 'CERT_UNTRUSTED', 'ERR_TLS_CERT_ALTNAME_INVALID', 'ERR_SSL_TLSV1_ALERT_UNKNOWN_CA', 'ERR_SSL_SSLV3_ALERT_BAD_CERTIFICATE',
 ]);

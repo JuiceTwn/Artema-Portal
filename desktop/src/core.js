@@ -13,6 +13,7 @@ const {
 } = require('./security');
 const { Store } = require('./store');
 const { RoleStore } = require('./roles');
+const { UpdateSource, UpdateClient } = require('./update');
 const { createPortalServer } = require('./server');
 const { Agent } = require('./agent');
 const { Beacon, probeUdp } = require('./discovery');
@@ -46,8 +47,11 @@ class Core {
    *   'client' - always a connecting computer, can never become the main computer
    *   'any'    - development and tests only: either, chosen in the wizard
    */
-  constructor({ dataDir, webDir, desktopDir, hooks = {}, edition = 'any' }) {
+  constructor({ dataDir, webDir, desktopDir, hooks = {}, edition = 'any', app = {} }) {
     this.edition = edition;
+    // what the packaged app knows about itself: { version, electron, appDir, updateDir, updateFirstMs, updateEveryMs }. Empty in development.
+    this.app = app;
+    this.updater = null; this.updateTimers = [];
     this.dataDir = dataDir;
     this.webDir = webDir;
     this.desktopDir = desktopDir;
@@ -141,7 +145,7 @@ class Core {
         const port = parseInt(this.cfg.port, 10);
         this.roles = new RoleStore(path.join(this.dataDir, 'portal.db'));
         this.server = createPortalServer(this.store, port, this.webDir, {
-          roles: this.roles, reveal: this.hooks.reveal, tls: this.tls, getPin: () => this.getPin(), rotatePin: () => this.rotatePin(), trustLoopback: () => this.trustLoopback,
+          roles: this.roles, update: this.app.updateDir ? new UpdateSource(this.app.updateDir) : null, reveal: this.hooks.reveal, tls: this.tls, getPin: () => this.getPin(), rotatePin: () => this.rotatePin(), trustLoopback: () => this.trustLoopback,
         });
         await new Promise((resolve, reject) => {
           this.server.once('error', reject);
@@ -167,6 +171,7 @@ class Core {
         this.agent = new Agent(rc, this.dataDir, { onReceived: this.hooks.onReceived });
         this.agent.start();
         this.watchTimer = setInterval(() => this.relocateIfLost().catch(() => { }), 5000);
+        this.startUpdater();
       }
     } catch (e) {
       this.startError = e.code === 'EADDRINUSE' ? 'That port is already in use. Try another one.' : String(e.message || e);
@@ -174,6 +179,30 @@ class Core {
       log(`start failed: ${e && e.stack || e}`);
     }
   }
+
+  // ---- updates from the main computer (connecting computers only, and only in the packaged app)
+  startUpdater() {
+    const a = this.app;
+    if (this.edition === 'server' || !a.appDir || !a.version || !a.electron) return;
+    this.updater = new UpdateClient({
+      appDir: a.appDir, version: a.version, electron: a.electron,
+      api: {
+        json: p => this.agent.call(p),
+        file: rel => request('GET', `${this.agent.url}/api/update/file?path=${encodeURIComponent(rel)}`, { headers: this.agent.headers(), timeout: 60000, ca: this.agent.ca }),
+      },
+      onChange: s => {
+        if (s.state === 'ready' && this.hooks.onUpdateReady) this.hooks.onUpdateReady({ version: s.version });
+      },
+    });
+    const check = () => this.updater && this.updater.check().catch(() => { });
+    this.updateTimers = [setTimeout(check, a.updateFirstMs != null ? a.updateFirstMs : 20000), setInterval(check, a.updateEveryMs || 10 * 60 * 1000)];
+  }
+  stopUpdater() {
+    for (const t of this.updateTimers) { clearTimeout(t); clearInterval(t); }
+    this.updateTimers = []; this.updater = null;
+  }
+  /** What the restart helper needs, when a complete update is waiting; otherwise null. */
+  pendingUpdate() { return this.updater ? this.updater.ready() : null; }
 
   /** The main computer's address changed (router reboot, new lease)? Find it again by its ID and carry on. */
   async relocateIfLost() {
@@ -200,6 +229,7 @@ class Core {
 
   async stopRole() {
     clearInterval(this.watchTimer); this.watchTimer = null;
+    this.stopUpdater();
     if (this.beacon) { this.beacon.stop(); this.beacon = null; }
     if (this.server) { const s = this.server; await new Promise(r => { s.close(r); s.closeAllConnections && s.closeAllConnections(); }); }
     if (this.agent) this.agent.stop();
@@ -213,7 +243,7 @@ class Core {
   // ---- wizard actions
   state() {
     const s = {
-      edition: this.edition, configured: this.configured, role: this.cfg.role || null, name: this.cfg.name || '', hostname: os.hostname(),
+      edition: this.edition, app_version: this.app.version || '', configured: this.configured, role: this.cfg.role || null, name: this.cfg.name || '', hostname: os.hostname(),
       default_port: DEFAULT_PORT, lan_ip: lanIp(), folder: this.folder, portal_url: this.portalUrl(), error: this.startError, version: VERSION,
       conflict: this.conflict,
     };
@@ -224,6 +254,7 @@ class Core {
     } else if (this.cfg.role === 'client') {
       s.host_url = this.cfg.host_url;
       s.status = this.agent ? this.agent.status : { state: 'warn', message: 'Not running', files: 0 };
+      if (this.updater) s.update = this.updater.state;
     }
     return s;
   }
