@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="theme-color" content="#0a0b0f">
+<meta name="theme-color" content="#5b1c1f">
 <title>Artema Portal</title>
 <link rel="icon" href="/assets/icon.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -11,9 +11,10 @@
 <link rel="stylesheet" href="/theme.css">
 <link rel="stylesheet" href="/portal.css">
 </head>
-<body>
+<body class="floor">
 <svg width="0" height="0" style="position:absolute" aria-hidden="true">
   <defs>
+    <symbol id="i-home" viewBox="0 0 24 24"><path d="M4 11.5 12 4l8 7.5"/><path d="M6 10v9.5A.5.5 0 0 0 6.5 20H10v-5h4v5h3.5a.5.5 0 0 0 .5-.5V10"/></symbol>
     <symbol id="i-folder" viewBox="0 0 24 24"><path d="M3 7.5A2.5 2.5 0 0 1 5.5 5H9l2 2.5h7.5A2.5 2.5 0 0 1 21 10v7.5a2.5 2.5 0 0 1-2.5 2.5h-13A2.5 2.5 0 0 1 3 17.5z"/></symbol>
     <symbol id="i-files" viewBox="0 0 24 24"><path d="M14 3H7.5A2.5 2.5 0 0 0 5 5.5v13A2.5 2.5 0 0 0 7.5 21h9a2.5 2.5 0 0 0 2.5-2.5V8z"/><path d="M14 3v5h5"/></symbol>
     <symbol id="i-activity" viewBox="0 0 24 24"><path d="M3 12h4l3-8 4 16 3-8h4"/></symbol>
@@ -36,11 +37,12 @@
 <div class="app" id="app">
   <aside class="side">
     <div class="brand"><img src="/assets/logo-light.webp" alt="Artema"><span>Portal</span></div>
-    <button class="nav active" data-view="files"><svg class="i"><use href="#i-files"/></svg>Files</button>
+    <button class="nav active" data-view="home"><svg class="i"><use href="#i-home"/></svg>Home</button>
     <button class="nav" data-view="orders"><svg class="i"><use href="#i-door"/></svg>Door orders</button>
-    <button class="nav" data-view="activity"><svg class="i"><use href="#i-activity"/></svg>Activity</button>
+    <button class="nav" data-view="files"><svg class="i"><use href="#i-files"/></svg>Files</button>
+    <button class="nav" data-view="activity"><svg class="i"><use href="#i-activity"/></svg>What's new</button>
     <button class="nav" data-view="computers"><svg class="i"><use href="#i-monitor"/></svg>Computers<span class="count" id="pc-count"></span></button>
-    <div class="side-label">Quick access</div>
+    <div class="side-label">Folders</div>
     <div class="quick" id="quick"></div>
     <div class="side-foot">
       <div class="who-line"><span class="dot" id="conn-dot"></span><span id="conn-text">Connected</span></div>
@@ -54,7 +56,7 @@
       <label class="search">
         <svg class="i"><use href="#i-search"/></svg>
         <input id="q" placeholder="Search drawings, files, folders" autocomplete="off" spellcheck="false">
-        <button type="button" class="clear" id="q-clear" hidden aria-label="Clear search"><svg class="i"><use href="#i-x"/></svg></button><kbd>/</kbd>
+        <button type="button" class="clear" id="q-clear" hidden aria-label="Clear search"><svg class="i"><use href="#i-x"/></svg></button>
       </label>
       <div class="spacer"></div>
       <button class="btn" id="btn-new" aria-label="New folder"><svg class="i"><use href="#i-newfolder"/></svg><span>New folder</span></button>
@@ -63,7 +65,11 @@
     <div class="banner" id="banner" hidden>Can't reach the Portal right now. Check that the main computer is on.</div>
 
     <div class="scroll" id="scroll">
-      <section class="view" id="view-files">
+      <section class="view" id="view-home">
+        <div id="home"></div>
+      </section>
+
+      <section class="view" id="view-files" hidden>
         <div class="head">
           <div>
             <div class="crumbs" id="crumbs"></div>
@@ -80,7 +86,7 @@
       </section>
 
       <section class="view" id="view-activity" hidden>
-        <div class="head"><div><div class="crumbs"><button>Activity</button></div><div class="sub">What's been happening across the shop</div></div></div>
+        <div class="head"><div><div class="crumbs"><button>What's new</button></div><div class="sub">Files people have added or changed</div></div></div>
         <div id="feed"></div>
       </section>
 
@@ -96,9 +102,10 @@
 </div>
 
 <nav class="tabs" id="tabs">
-  <button class="active" data-view="files"><svg class="i"><use href="#i-files"/></svg>Files</button>
+  <button class="active" data-view="home"><svg class="i"><use href="#i-home"/></svg>Home</button>
   <button data-view="orders"><svg class="i"><use href="#i-door"/></svg>Orders</button>
-  <button data-view="activity"><svg class="i"><use href="#i-activity"/></svg>Activity</button>
+  <button data-view="files"><svg class="i"><use href="#i-files"/></svg>Files</button>
+  <button data-view="activity"><svg class="i"><use href="#i-activity"/></svg>New</button>
   <button data-view="computers"><svg class="i"><use href="#i-monitor"/></svg>Computers</button>
 </nav>
 
