@@ -73,4 +73,33 @@ async function stopInstalledCopies(exePath, selfPid = process.pid, exec = run) {
   return roots.length;
 }
 
-module.exports = { noteVersion, cleanUpdateLeftovers, findInstances, stopInstalledCopies };
+/**
+ * Copies a folder without blocking the program (so an animation stays smooth), reporting progress as it goes.
+ * onProgress({ files, totalFiles, bytes, totalBytes }). Links are skipped: an app folder has none.
+ */
+async function copyTree(src, dest, onProgress = () => { }, parallel = 6) {
+  const files = []; let totalBytes = 0;
+  const walk = rel => {
+    const dir = path.join(src, rel);
+    fs.mkdirSync(path.join(dest, rel), { recursive: true });
+    for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
+      const r = rel ? `${rel}/${e.name}` : e.name;
+      if (e.isDirectory()) walk(r);
+      else if (e.isFile()) { const size = fs.statSync(path.join(src, r)).size; files.push({ rel: r, size }); totalBytes += size; }
+    }
+  };
+  walk('');
+  let next = 0, done = 0, bytes = 0;
+  const worker = async () => {
+    while (next < files.length) {
+      const f = files[next++];
+      await fs.promises.copyFile(path.join(src, f.rel), path.join(dest, f.rel));
+      done++; bytes += f.size;
+      onProgress({ files: done, totalFiles: files.length, bytes, totalBytes });
+    }
+  };
+  await Promise.all(Array.from({ length: Math.min(parallel, files.length || 1) }, worker));
+  return { files: files.length, bytes };
+}
+
+module.exports = { copyTree, noteVersion, cleanUpdateLeftovers, findInstances, stopInstalledCopies };

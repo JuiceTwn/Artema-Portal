@@ -8,7 +8,8 @@ process.env.ARTEMA_UDP_PORT = '41496';
 const { Core } = require('../src/core');
 const { compare, valid } = require('../src/version');
 const { safeRel, buildManifest, validateManifest } = require('../src/update');
-const { noteVersion, cleanUpdateLeftovers, stopInstalledCopies } = require('../src/housekeeping');
+const { noteVersion, cleanUpdateLeftovers, stopInstalledCopies, copyTree } = require('../src/housekeeping');
+const { splashHtml } = require('../src/installer-ui');
 
 const T = fs.mkdtempSync(path.join(os.tmpdir(), 'artema-update-e2e-'));
 const WEB = path.join(__dirname, '..', 'web');
@@ -138,6 +139,17 @@ async function publish(dir, version, { electron = '45.0.0', corrupt = false, edi
     check('a new version that crashes is rolled back to the old one', r.version === 'OLD' && r.has('app.failed') && !r.has('app.update'), r);
     check('...and the old version is started again', /going back/.test(r.log) && r.version === 'OLD', r);
 
+    // ---- the installer: copying an app folder with progress, and the window that shows it
+    const from = path.join(T, 'copy-from'), to = path.join(T, 'copy-to');
+    fs.rmSync(from, { recursive: true, force: true }); fs.rmSync(to, { recursive: true, force: true });
+    for (let i = 0; i < 40; i++) put(from, `d${i % 4}/sub/f${i}.txt`, 'x'.repeat(i * 100));
+    put(from, 'empty/.keep', ''); fs.mkdirSync(path.join(from, 'empty', 'inner'), { recursive: true });
+    put(to, 'd0/sub/f0.txt', 'an older copy that must be replaced');
+    const seen = []; const copied = await copyTree(from, to, p => seen.push(p));
+    check('the installer copies every file and folder, replacing older ones', same(tree(from), tree(to)) && fs.existsSync(path.join(to, 'empty', 'inner')) && copied.files === 41, copied);
+    check('...and reports progress that only goes forward and ends complete', seen.length === 41 && seen.every((p, i) => i === 0 || p.files >= seen[i - 1].files) && seen[seen.length - 1].bytes === seen[seen.length - 1].totalBytes, seen.length);
+    const page = splashHtml({ name: 'Artema Portal <Server>', version: '1.0.6', logo: '' });
+    check('the install window is one self-contained page that escapes what it is given', /^<!doctype html>/.test(page) && !/https?:\/\//.test(page) && page.includes('Artema Portal &lt;Server&gt;') && page.includes('Version 1.0.6') && /Closing older versions/.test(page) && /setStatus/.test(page));
     // ---- cleanup
     const res = path.join(T, 'tidy'); fs.rmSync(res, { recursive: true, force: true });
     put(res, 'app/package.json', '{}'); put(res, 'app.old/x', 'x'); put(res, 'app.update/x', 'x'); put(res, 'app.update.json', JSON.stringify({ version: '1.0.1' })); put(res, 'app.failed/x', 'x');

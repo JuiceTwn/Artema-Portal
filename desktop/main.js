@@ -7,7 +7,8 @@ const os = require('os');
 const { spawn } = require('child_process');
 const { Core } = require('./src/core');
 const { setLogFile, log } = require('./src/util');
-const { noteVersion, cleanUpdateLeftovers, stopInstalledCopies } = require('./src/housekeeping');
+const { noteVersion, cleanUpdateLeftovers, stopInstalledCopies, copyTree } = require('./src/housekeeping');
+const { splashHtml } = require('./src/installer-ui');
 
 // Which build this is is decided when it is built (package.json "artemaEdition"), never by anything the app finds at run time:
 // the server build is always the main computer, the client build never is. ARTEMA_EDITION is for running from source.
@@ -192,22 +193,44 @@ async function ensureInstalled() {
   if (process.env.ARTEMA_DATA && !process.env.ARTEMA_INSTALL_DIR) return false;      // automated tests
   const here = path.dirname(process.execPath), target = installDir();
   if (path.resolve(here).toLowerCase() === path.resolve(target).toLowerCase()) return false;
-  const splash = new BrowserWindow({ width: 440, height: 220, frame: false, resizable: false, backgroundColor: '#0a0b0f', alwaysOnTop: true, icon: asset('icon.png') });
-  splash.loadURL('data:text/html;charset=utf-8,' + encodeURIComponent(
-    '<body style="margin:0;background:#0a0b0f;color:#f6efe6;font:600 18px Segoe UI,sans-serif;display:grid;place-items:center;height:100vh;letter-spacing:.02em">Installing Artema Portal…</body>'));
+  const splash = new BrowserWindow({
+    width: 540, height: 340, frame: false, transparent: true, resizable: false, movable: true, alwaysOnTop: true, skipTaskbar: false, show: false,
+    title: `Installing ${APP_NAME}`, icon: asset('icon.png'), webPreferences: { sandbox: true, spellcheck: false },
+  });
+  let logo = ''; try { logo = 'data:image/webp;base64,' + fs.readFileSync(path.join(__dirname, 'web', 'assets', 'logo-light.webp')).toString('base64'); } catch { /* the page falls back to a word */ }
+  await splash.loadURL('data:text/html;charset=utf-8,' + encodeURIComponent(splashHtml({ name: APP_NAME, version: app.getVersion(), logo })));
+  splash.show();
+  const show = s => { if (!splash.isDestroyed()) splash.webContents.executeJavaScript(`setStatus(${JSON.stringify(s)})`).catch(() => { }); };
+  const pause = ms => new Promise(r => setTimeout(r, ms));
   const exe = path.join(target, path.basename(process.execPath));
   try {
+    show({ step: 0, pct: 3, text: 'Closing older versions…' });
     await stopInstalledCopies(exe);          // an older version still sitting in the tray would hold the files (and the lock) we need
     fs.mkdirSync(target, { recursive: true });
     // replace the app wholesale so no file of an older version can linger and mix with the new one
-    for (const leftover of ['app', 'app.old', 'app.update', 'app.update.json', 'app.failed']) fs.rmSync(path.join(target, 'resources', leftover), { recursive: true, force: true });
-    fs.cpSync(here, target, { recursive: true, force: true });
+    for (const leftover of ['app', 'app.old', 'app.update', 'app.update.json', 'app.failed', 'update', 'update.old']) fs.rmSync(path.join(target, 'resources', leftover), { recursive: true, force: true });
+    show({ step: 1, pct: 5, text: 'Installing program files…' });
+    let last = 0;
+    await copyTree(here, target, p => {
+      const now = Date.now();
+      if (now - last < 70 && p.files < p.totalFiles) return;
+      last = now;
+      show({ step: 1, pct: 5 + 85 * (p.bytes / Math.max(1, p.totalBytes)), text: `Installing program files… ${p.files} of ${p.totalFiles}` });
+    });
   } catch (e) {
     log('self-install failed, running in place: ' + e.message);
+    show({ step: 1, pct: 100, text: "Couldn't install. Starting from where it is…", error: true });
+    await pause(1200);
     splash.close();
     return false;
   }
+  show({ step: 2, pct: 93, text: 'Adding shortcuts…' });
   makeShortcuts(exe);
+  await pause(250);
+  show({ step: 3, pct: 98, text: `Starting ${APP_NAME}…` });
+  await pause(350);
+  show({ step: 4, pct: 100, done: true, text: 'All set', sub: 'Opening now.' });
+  await pause(600);
   app.releaseSingleInstanceLock();
   require('child_process').spawn(exe, process.argv.slice(1), { detached: true, stdio: 'ignore', cwd: target }).unref();
   app.exit(0);
