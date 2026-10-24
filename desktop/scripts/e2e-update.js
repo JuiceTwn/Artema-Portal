@@ -165,6 +165,19 @@ async function publish(dir, version, { electron = '45.0.0', corrupt = false, edi
       const n = await stopInstalledCopies(exe, 555, exec);
       check('an older installed copy is closed, never this one or a copy somewhere else', n === 1 && killed.join() === '100', { n, killed });
     }
+
+    // ---- the newest server owns the default port (18499 in this test)
+    const stopHolder = async port => { const h = cores.find(c => c.server && parseInt(c.cfg.port, 10) === port); if (!h) return false; await h.stopRole(); return true; };
+    const mkServer = (tag, version) => mkCore(tag, { edition: 'server', hooks: { stopPortHolder: stopHolder }, app: { version } });
+    const oldHost = mkCore('p-old', {}); await oldHost.startLocalServer(0); await oldHost.setupHost('Old test host', 18499);          // no version: an older build
+    const v2 = mkServer('p-v2', '1.0.2'); await v2.startLocalServer(0); await v2.ensureServer();
+    check('a newer server takes the default port from an older one', v2.cfg.port === 18499 && !!v2.server && !oldHost.server, { port: v2.cfg.port, err: v2.startError });
+    const v2b = mkServer('p-v2b', '1.0.2'); await v2b.startLocalServer(0); await v2b.ensureServer();
+    check('a server of the same version does not push the running one off', !!v2.server && v2.cfg.port === 18499 && !!v2b.server && v2b.cfg.port !== 18499, { v2: v2.cfg.port, v2b: v2b.cfg.port });
+    const v3 = mkServer('p-v3', '1.0.3'); await v3.startLocalServer(0); await v3.ensureServer();
+    check('an even newer server takes it over in turn', v3.cfg.port === 18499 && !!v3.server && !v2.server, { v3: v3.cfg.port });
+    await v3.stopRole(); await v2b.stopRole(); await v2b.startRole();
+    check('a server saved on another port moves to the default port once it is free', v2b.cfg.port === 18499 && !!v2b.server, { port: v2b.cfg.port, err: v2b.startError });
   } catch (e) { console.log('TEST CRASH', e); fails.push('crash'); }
   for (const c of cores) { try { await c.shutdown(); } catch { /* already stopped */ } }
   console.log('\nFAILED:', fails.length ? fails : 'none'); console.log('temp:', T);

@@ -232,6 +232,13 @@ const hooks = {
   onConflict: c => notify('Two main computers found', `“${c.name}” (${c.address}) is also acting as a main computer. Open Setup and status to sort it out.`),
   onRelocated: () => notify('Reconnected', 'The main computer changed address. Artema Portal followed it.'),
   onUpdateReady,
+  // The newest server owns the default port. Closes whatever Artema Portal program is listening on it (and nothing else).
+  stopPortHolder: port => new Promise(resolve => {
+    if (process.platform !== 'win32') return resolve(false);
+    const ps = `$p = (Get-NetTCPConnection -LocalPort ${parseInt(port, 10)} -State Listen -ErrorAction SilentlyContinue | Select-Object -First 1).OwningProcess; ` +
+      `if ($p) { $n = (Get-Process -Id $p -ErrorAction SilentlyContinue).ProcessName; if ($n -like 'Artema Portal*' -and $p -ne ${process.pid}) { taskkill /PID $p /T /F | Out-Null; 'closed' } }`;
+    execFile('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', ps], { windowsHide: true, timeout: 20000 }, (_err, out) => resolve(/closed/.test(String(out || ''))));
+  }),
   openFirewall: port => new Promise(resolve => {
     if (process.platform !== 'win32') return resolve(true);
     const rule = (name, proto, p) => new Promise(r => execFile('netsh', ['advfirewall', 'firewall', 'add', 'rule', `name=${name}`, 'dir=in', 'action=allow',

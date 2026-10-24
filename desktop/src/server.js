@@ -60,7 +60,7 @@ function createPortalServer(store, port, webDir, hooks = {}) {
 
       // ---- the two things a stranger may do
       if (req.method === 'GET' && ep === 'info') {
-        const base = { app: APP_NAME, version: VERSION, id: store.instanceId, name: store.hostName, port, tls: true };
+        const base = { app: APP_NAME, version: VERSION, app_version: hooks.appVersion || '', id: store.instanceId, name: store.hostName, port, tls: true };
         return sendJson(res, auth ? { ...base, ip: lanIp(), folder: auth.kind === 'host' ? store.root : undefined, local: auth.kind === 'host' } : base);
       }
       if (req.method === 'POST' && ep === 'register') {

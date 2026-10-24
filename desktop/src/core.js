@@ -14,6 +14,7 @@ const {
 const { Store } = require('./store');
 const { RoleStore } = require('./roles');
 const { UpdateSource, UpdateClient } = require('./update');
+const { compare, valid } = require('./version');
 const { createPortalServer } = require('./server');
 const { Agent } = require('./agent');
 const { Beacon, probeUdp } = require('./discovery');
@@ -142,10 +143,15 @@ class Core {
         this.store.instanceId = this.cfg.instance_id;
         if (!this.getPin()) this.saveCfg(this.withSecret(this.cfg, 'join_pin', genPin()));
         this.tls = await loadOrCreateCert(path.join(this.dataDir, 'tls'), { seal: t => this.seal(t), unseal: t => this.unseal(t), hostnames: [os.hostname()], ips: [lanIp()] });
-        const port = parseInt(this.cfg.port, 10);
+        let port = parseInt(this.cfg.port, 10);
+        // the newest server always sits on the default port: if an older Artema server is holding it, it makes way
+        if (this.edition === 'server' && port !== DEFAULT_PORT && await this.tryClaim(DEFAULT_PORT)) {
+          log(`port ${DEFAULT_PORT} is now this server's (was on ${port})`);
+          port = DEFAULT_PORT; this.saveCfg({ ...this.cfg, port });
+        }
         this.roles = new RoleStore(path.join(this.dataDir, 'portal.db'));
         this.server = createPortalServer(this.store, port, this.webDir, {
-          roles: this.roles, update: this.app.updateDir ? new UpdateSource(this.app.updateDir) : null, reveal: this.hooks.reveal, tls: this.tls, getPin: () => this.getPin(), rotatePin: () => this.rotatePin(), trustLoopback: () => this.trustLoopback,
+          appVersion: this.app.version || '', roles: this.roles, update: this.app.updateDir ? new UpdateSource(this.app.updateDir) : null, reveal: this.hooks.reveal, tls: this.tls, getPin: () => this.getPin(), rotatePin: () => this.rotatePin(), trustLoopback: () => this.trustLoopback,
         });
         await new Promise((resolve, reject) => {
           this.server.once('error', reject);
@@ -268,8 +274,35 @@ class Core {
       const buf = await readAll(res);
       const info = JSON.parse(buf.toString('utf8'));
       if (res.statusCode !== 200 || info.app !== APP_NAME || !pem) return null;
-      return { address: addr, name: info.name || addr, id: info.id, pem, fp: fingerprintOfPem(pem) };
+      return { address: addr, name: info.name || addr, id: info.id, version: info.app_version || '', pem, fp: fingerprintOfPem(pem) };
     } catch { return null; }
+  }
+
+  /** Is anything listening on this port on this computer? */
+  portFree(port) {
+    return new Promise(resolve => {
+      const s = net.createServer();
+      s.once('error', () => resolve(false));
+      s.listen(port, '0.0.0.0', () => s.close(() => resolve(true)));
+    });
+  }
+
+  /**
+   * Gets the port for this (newer) server. Free: it is ours. Held by an older Artema Portal server (one that reports no version, or a
+   * lower one): ask the app to close that program and take the port. Held by an equal or newer version, or by anything else: leave it.
+   */
+  async tryClaim(port) {
+    if (await this.portFree(port)) return true;
+    const mine = this.app.version;
+    if (!mine || !valid(mine) || !this.hooks.stopPortHolder) return false;
+    const holder = await this.probe(`127.0.0.1:${port}`);
+    if (!holder || holder.id === this.cfg.instance_id) return false;
+    const older = !holder.version || (valid(holder.version) && compare(mine, holder.version) > 0);
+    if (!older) return false;
+    log(`port ${port} is held by an older server (${holder.version || 'no version'}), closing it`);
+    if (!(await this.hooks.stopPortHolder(port))) return false;
+    for (let i = 0; i < 20; i++) { if (await this.portFree(port)) return true; await sleep(250); }
+    return false;
   }
 
   /** A main computer from before the Portal was encrypted answers on plain http: say so instead of "can't find it". */
@@ -347,6 +380,7 @@ class Core {
     if (!name || name.length > 40) throw new HttpError(400, 'Give this computer a name');
     if (!(port >= 1024 && port <= 65535)) throw new HttpError(400, 'Pick a port between 1024 and 65535');
     await this.stopRole();
+    if (auto && this.edition === 'server' && port === DEFAULT_PORT) await this.tryClaim(port);
     const first = port, tries = auto ? 10 : 1;          // automatic setup walks up to the next free port instead of failing
     for (let i = 0; i < tries; i++) {
       port = first + i;
