@@ -47,14 +47,14 @@ const CSS = `
   html, body { margin: 0; background: #e9e4dc; }
   body { font: 14px/1.4 "Segoe UI", "Helvetica Neue", Arial, sans-serif; color: #161922; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
   .page { width: 8.5in; min-height: 11in; margin: 0 auto; background: #fff; display: flex; flex-direction: column; overflow: hidden; }
-  .band { background: #161922; color: #f6efe6; padding: 22px 40px 20px; display: flex; align-items: center; justify-content: space-between; border-bottom: 5px solid #cc7d14; }
+  .band { background: #161922; color: #f6efe6; padding: 16px 40px 14px; display: flex; align-items: center; justify-content: space-between; border-bottom: 5px solid #cc7d14; }
   .band img { height: 26px; display: block; }
   .band .wo { text-align: right; }
   .band .wo small { display: block; font-size: 10px; letter-spacing: .24em; text-transform: uppercase; color: #e39a2f; font-weight: 700; }
   .band .wo b { font-size: 22px; letter-spacing: .02em; font-weight: 600; }
-  .head { display: flex; justify-content: space-between; align-items: flex-end; gap: 24px; padding: 28px 40px 18px; }
+  .head { display: flex; justify-content: space-between; align-items: flex-end; gap: 24px; padding: 20px 40px 14px; }
   .head .num small, .ship small { display: block; font-size: 10px; letter-spacing: .2em; text-transform: uppercase; color: #7b2528; font-weight: 700; }
-  .head .num h1 { margin: 0; font-size: 46px; line-height: 1.05; letter-spacing: -.01em; }
+  .head .num h1 { margin: 0; font-size: 42px; line-height: 1.05; letter-spacing: -.01em; }
   .head .num p { margin: 6px 0 0; color: #5a5f6b; font-size: 15px; }
   .ship { text-align: right; flex: none; padding: 10px 16px; border: 1.5px solid #161922; border-radius: 12px; min-width: 190px; }
   .ship b { font-size: 18px; display: block; }
@@ -65,24 +65,26 @@ const CSS = `
   .card h2 { margin: 0 0 10px; font-size: 11px; letter-spacing: .2em; text-transform: uppercase; color: #7b2528; }
   .facts { display: grid; grid-template-columns: repeat(2, 1fr); gap: 2px 20px; }
   .card.wide .facts { grid-template-columns: repeat(3, 1fr); }
-  .fact { padding: 5px 0 9px; border-bottom: 1px solid #efe9df; min-width: 0; }
+  .card.dense .facts { grid-template-columns: repeat(4, 1fr); }
+  .card.dense .fact b { font-size: 14px; }
+  .fact { padding: 4px 0 7px; border-bottom: 1px solid #efe9df; min-width: 0; }
   .fact small { display: block; font-size: 10px; letter-spacing: .08em; text-transform: uppercase; color: #8a8f99; font-weight: 600; }
   .fact b { font-size: 17px; font-weight: 600; overflow-wrap: anywhere; }
   .fact b.none { color: #b9b4ab; font-weight: 400; }
-  .rest { padding: 22px 40px 0; }
+  .rest { padding: 14px 40px 0; }
   .rest > h2 { margin: 0 0 8px; font-size: 11px; letter-spacing: .2em; text-transform: uppercase; color: #8a8f99; }
-  .rest .grid { columns: 2; column-gap: 28px; }
+  .rest .grid { columns: 3; column-gap: 22px; }
   .rest .sec { break-inside: avoid; margin-bottom: 12px; }
   .rest .sec h3 { margin: 0 0 3px; font-size: 12px; color: #7b2528; font-weight: 700; }
-  .rest .row { display: flex; justify-content: space-between; gap: 12px; font-size: 12px; padding: 2px 0; border-bottom: 1px dotted #ddd5c9; }
+  .rest .row { display: flex; justify-content: space-between; gap: 10px; font-size: 11px; padding: 1px 0; border-bottom: 1px dotted #ddd5c9; }
   .rest .row span { color: #7a7f89; }
   .rest .row b { font-weight: 600; text-align: right; }
-  .sign { margin: 22px 40px 26px; padding: 14px 18px; border: 1.5px dashed #b9b4ab; border-radius: 10px; display: flex; gap: 28px; align-items: center; font-size: 12px; color: #5a5f6b; }
+  .sign { margin: 10px 40px 14px; padding: 14px 18px; border: 1.5px dashed #b9b4ab; border-radius: 10px; display: flex; gap: 28px; align-items: center; font-size: 12px; color: #5a5f6b; }
   .sign i { flex: 1; border-bottom: 1px solid #161922; height: 18px; }
   .sign .box { width: 18px; height: 18px; border: 1.5px solid #161922; border-radius: 4px; flex: none; }
   .foot { margin: auto 40px 18px; display: flex; justify-content: space-between; font-size: 10px; color: #9a9ea8; border-top: 1px solid #ddd5c9; padding-top: 8px; }
   @media screen { .page { margin: 18px auto; box-shadow: 0 10px 40px rgba(0, 0, 0, .25); } }
-  @media print { html, body { background: #fff; } .page { margin: 0; box-shadow: none; } }
+  @media print { html, body { background: #fff; } .page { margin: 0; box-shadow: none; min-height: 10.9in; } }
 `;
 
 const fact = (label, value) => `<div class="fact"><small>${esc(label)}</small><b${value ? '' : ' class="none"'}>${value ? esc(value) : '—'}</b></div>`;
@@ -95,7 +97,7 @@ function renderWorkOrder(order, dept) {
   const cards = focus.map((k, i) => {
     const s = SECTIONS[k];
     const wide = s.rows.length > 5 || (focus.length % 2 === 1 && i === focus.length - 1 && focus.length > 1) || focus.length === 1;
-    return `<section class="card${wide ? ' wide' : ''}"><h2>${esc(s.title)}</h2><div class="facts">${s.rows.map(([l, key]) => fact(l, f[key])).join('')}</div></section>`;
+    return `<section class="card${wide ? ' wide' : ''}${s.rows.length > 8 ? ' dense' : ''}"><h2>${esc(s.title)}</h2><div class="facts">${s.rows.map(([l, key]) => fact(l, f[key])).join('')}</div></section>`;
   }).join('');
   const others = rest.map(k => {
     const s = SECTIONS[k], rows = s.rows.filter(([, key]) => f[key]);
