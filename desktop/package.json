@@ -1,7 +1,7 @@
 {
   "name": "artema-portal",
   "productName": "Artema Portal",
-  "version": "1.0.3",
+  "version": "1.0.4",
   "description": "Send and receive shop files between the offices and the CNC machines.",
   "author": "Artema Door",
   "main": "main.js",

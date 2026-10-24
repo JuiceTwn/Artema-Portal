@@ -54,13 +54,14 @@ function makeForm(file, { door = '26-611', rowShift = 0, ext = 'xlsx' } = {}) {
     const list = o.list();
     check('only spreadsheets are listed: no lock files, no text files, subfolders included', list.map(x => x.name).sort().join() === 'Door 26-611.xlsx,Door 26-612.xlsx,Door 26-613.xlsx', list.map(x => x.name));
     const a = list.find(x => x.door === '26-611');
-    check('the CNC fields are read from their labels', a && a.series === 'Richersons Smooth skin' && a.type === 'flush' && a.swing === 'Inswing' && a.hingeSide === 'RH' && a.hingeFinish === 'Flat Black Self Closing' && a.hingeQty === '4' && a.deadbolt === '2 1/8 (2 3/8 BS) 5 1/2"', a);
-    check('sizes are tidied (extra spaces removed)', a.width === '35 3/4' && a.height === '83', a);
-    check('"-" and 0 mean nothing there', a.multipoint === '' && a.hingeType === '', a);
-    check('the first "Panel type" wins, not the sidelight one', a.type === 'flush');
+    check('the CNC fields are read from their labels', a && a.f.series === 'Richersons Smooth skin' && a.f.ptype === 'flush' && a.f.swing === 'Inswing' && a.f.hingeSide === 'RH' && a.f.hingeFinish === 'Flat Black Self Closing' && a.f.hingeQty === '4' && a.f.deadbolt === '2 1/8 (2 3/8 BS) 5 1/2"', a);
+    check('sizes are tidied (extra spaces removed)', a.f.width === '35 3/4' && a.f.height === '83', a);
+    check('"-" and 0 mean nothing there', a.f.multipoint === '' && a.f.hingeType === '', a);
+    check('the first "Panel type" wins, not the sidelight one', a.f.ptype === 'flush');
     const b = list.find(x => x.door === '26-612');
-    check('a form whose rows moved down still reads right', b && b.swing === 'Inswing' && b.series === 'Richersons Smooth skin' && b.hingeQty === '4', b);
-    check('the customer and door number come from the form', a.customer === 'Evolve Windows & Doors' && a.door === '26-611');
+    check('sizes and sections are joined up', a.f.size === '35 3/4 \u00d7 83' && a.f.doorFrame === '' && a.f.project === 'Pinnacle - Town Houses', a.f);
+    check('a form whose rows moved down still reads right', b && b.f.swing === 'Inswing' && b.f.series === 'Richersons Smooth skin' && b.f.hingeQty === '4', b);
+    check('the customer and door number come from the form', a.f.customer === 'Evolve Windows & Doors' && a.door === '26-611');
     const bad = list.find(x => x.name === 'Door 26-613.xlsx');
     check('a file that is not a spreadsheet is reported, not fatal', bad && bad.error && bad.door === '26-613', bad);
 
@@ -74,6 +75,16 @@ function makeForm(file, { door = '26-611', rowShift = 0, ext = 'xlsx' } = {}) {
     try { o.sheet('notes.txt'); err = null; } catch (e) { err = e; }
     check('only spreadsheets can be previewed', err && err.status === 400);
 
+    // ---- the work order
+    const { renderWorkOrder } = require('../src/workorder');
+    const html = renderWorkOrder(a, 'CNC');
+    check('the work order is one self-contained page: no scripts, no outside files', /^<!doctype html>/.test(html) && !/<script|https?:\/\//i.test(html.replace(/data:image\/webp;base64,[A-Za-z0-9+/=]+/, '')), html.slice(0, 80));
+    check('it leads with the door, the customer and the department', /26-611/.test(html) && /Evolve Windows &amp; Doors/.test(html) && /Work order/.test(html) && />CNC</.test(html));
+    check('the CNC view puts panel, hinges and lock prepping first', html.indexOf('Door panel') < html.indexOf('Hinges') && html.indexOf('Hinges') < html.indexOf('Lock prepping') && /Richersons Smooth skin/.test(html) && /2 1\/8 \(2 3\/8 BS\)/.test(html));
+    check('other departments get their own focus, and the rest is still on the page', renderWorkOrder(a, 'Paint').indexOf('Finish &amp; colour') < renderWorkOrder(a, 'Paint').indexOf('Also on this order') && /Door panel/.test(renderWorkOrder(a, 'Paint').split('Also on this order')[1]));
+    check('text from a spreadsheet cannot break out of the page', !/<img src=x/.test(renderWorkOrder({ ...a, f: { ...a.f, customer: '<img src=x onerror=alert(1)>' } }, 'Office')));
+    check('an unknown department is read as Office', />Office</.test(renderWorkOrder(a, 'Plumbing')));
+
     // ---- over the API, as a joined computer tagged CNC
     const mk = tag => { fs.mkdirSync(path.join(T, tag, 'desk'), { recursive: true }); const c = new Core({ dataDir: path.join(T, tag, 'data'), webDir: path.join(__dirname, '..', 'web'), desktopDir: path.join(T, tag, 'desk'), hooks: {} }); c.trustLoopback = false; cores.push(c); return c; };
     const H = mk('host'), C = mk('cnc');
@@ -84,12 +95,24 @@ function makeForm(file, { door = '26-611', rowShift = 0, ext = 'xlsx' } = {}) {
     await C.join('127.0.0.1:18501', 'Big CNC', H.getPin());
     const call = async ep => { const r = await fetch('https://127.0.0.1:18501/api/' + ep, { headers: { Authorization: 'Bearer ' + C.secret('device_token'), 'X-Device': 'test' } }); return { status: r.status, body: await r.json().catch(() => ({})) }; };
     let r = await call('orders');
-    check('a joined computer can list the door orders', r.status === 200 && r.body.items.length === 1 && r.body.items[0].hingeSide === 'RH', r);
+    check('a joined computer can list the door orders', r.status === 200 && r.body.items.length === 1 && r.body.items[0].f.hingeSide === 'RH', r);
     r = await call('orders/sheet?path=' + encodeURIComponent('Door 26-611.xlsx'));
     check('...and open the sheet', r.status === 200 && r.body.rows.length > 10 && r.body.sheets.includes('Parts List'), r.status);
     check('...and a path that escapes is refused', (await call('orders/sheet?path=' + encodeURIComponent('../config.json'))).status === 400);
-    H.store.setTag(C.cfg.device_id, 'CNC');
-    check('the computer\'s department tag is available to the page', (await call('me')).body.tag === 'CNC');
+    const post = async (who, ep, body) => { H.trustLoopback = who === 'host'; try { const r = await fetch('https://127.0.0.1:18501/api/' + ep, { method: 'POST', headers: { ...(who === 'host' ? {} : { Authorization: 'Bearer ' + C.secret('device_token') }), 'X-Device': 'test', 'Content-Type': 'application/json' }, body: JSON.stringify(body) }); return { status: r.status, body: await r.json().catch(() => ({})) }; } finally { H.trustLoopback = false; } };
+    const id = C.cfg.device_id;
+    check('a general computer cannot hand out departments', (await post(C, 'devices/department', { id, dept: 'Paint' })).status === 403);
+    check('the main computer can', (await post('host', 'devices/department', { id, dept: 'frame prep' })).status === 200 && (await call('me')).body.tag === 'Frame Prep');
+    check('an unknown department is refused', (await post('host', 'devices/department', { id, dept: 'Plumbing' })).status === 400);
+    check('a department can be cleared', (await post('host', 'devices/department', { id, dept: '' })).status === 200 && (await call('me')).body.tag === '');
+    check('the page is told which departments exist', (await call('devices')).body.departments.join() === 'CNC,Frame Prep,Paint,Assembly,Office');
+    await post('host', 'devices/role', { id, role: 'admin' });
+    check('an admin computer can hand out departments too', (await post(C, 'devices/department', { id, dept: 'CNC' })).status === 200 && (await call('me')).body.tag === 'CNC');
+    r = await fetch('https://127.0.0.1:18501/api/orders/workorder?path=' + encodeURIComponent('Door 26-611.xlsx') + '&dept=CNC', { headers: { Authorization: 'Bearer ' + C.secret('device_token') } });
+    const page = await r.text();
+    check('the work order page is served for framing, with a locked-down policy', r.status === 200 && /text\/html/.test(r.headers.get('content-type')) && /default-src 'none'/.test(r.headers.get('content-security-policy')) && r.headers.get('x-frame-options') === 'SAMEORIGIN' && /26-611/.test(page));
+    r = await fetch('https://127.0.0.1:18501/api/orders/pdf?path=' + encodeURIComponent('Door 26-611.xlsx'), { headers: { Authorization: 'Bearer ' + C.secret('device_token') } });
+    check('a PDF is only made where the app can print one (here it says so)', r.status === 501);
   } catch (e) { console.log('TEST CRASH', e); fails.push('crash'); }
   for (const c of cores) { try { await c.shutdown(); } catch { /* already stopped */ } }
   console.log('\nFAILED:', fails.length ? fails : 'none'); console.log('temp:', T);

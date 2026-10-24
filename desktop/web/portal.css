@@ -244,7 +244,7 @@ dialog .btns { display: flex; justify-content: flex-end; gap: 10px; margin-top: 
 .sm { font-size: 12px; }
 .muted.sm { color: var(--muted); }
 .ttable { display: flex; flex-direction: column; }
-.trow { display: grid; grid-template-columns: minmax(0, 1.6fr) 120px 150px auto; gap: 14px; align-items: center; padding: 12px 0; border-top: 1px solid var(--line); }
+.trow { display: grid; grid-template-columns: minmax(150px, 1.5fr) 100px 124px 148px auto; gap: 14px; align-items: center; padding: 12px 0; border-top: 1px solid var(--line); }
 .trow:first-child { border-top: 0; }
 .trow.off .who { opacity: .7; }
 .trow .who { display: flex; align-items: center; gap: 12px; min-width: 0; }
@@ -262,6 +262,8 @@ dialog .btns { display: flex; justify-content: flex-end; gap: 10px; margin-top: 
 .role-sel option { background: var(--panel-2); color: var(--text); }
 .role-sel.r-admin { color: var(--amber-hi); }
 .role-sel.r-dev { color: #ffb3b6; }
+.dept-sel { color: var(--muted); }
+.dept-sel:not([data-cur=""]) { color: var(--text); }
 .rolechip { display: inline-block; font-size: 10px; letter-spacing: .14em; text-transform: uppercase; font-weight: 700; padding: 3px 10px; border-radius: 999px; background: rgba(251, 238, 223, .08); color: var(--muted); }
 .rolechip.r-admin { background: rgba(204, 125, 20, .16); color: var(--amber-hi); }
 .rolechip.r-dev { background: rgba(168, 52, 58, .28); color: #ffb3b6; }
@@ -272,7 +274,7 @@ dialog .btns { display: flex; justify-content: flex-end; gap: 10px; margin-top: 
   .stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .trow { grid-template-columns: minmax(0, 1fr) 140px; }
   .trow .state { grid-column: 1; grid-row: 2; }
-  .trow .lvl { grid-column: 2; grid-row: 1 / span 2; }
+  .trow .lvl { grid-column: 2; }
   .trow .acts { grid-column: 1 / -1; justify-content: flex-start; }
 }
 
@@ -305,7 +307,12 @@ dialog .btns { display: flex; justify-content: flex-end; gap: 10px; margin-top: 
 .sheet td:empty { background: #faf7f2; }
 @media (max-width: 1180px) {
   .orow.oth { display: none; }
-  .orow { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px 14px; }
+  .orow { grid-template-columns: repeat(2, minmax(0, 1fr)) !important; gap: 10px 14px; }
   .orow .door { grid-column: 1 / -1; }
+  .orow .bad { grid-column: 1 / -1 !important; }
   .orow > [data-l]::before { content: attr(data-l); display: block; font-size: 10px; letter-spacing: .12em; text-transform: uppercase; font-weight: 700; color: var(--faint); }
 }
+
+.dtabs button i { font-style: normal; font-size: 9px; letter-spacing: .1em; text-transform: uppercase; margin-left: 7px; opacity: .7; }
+.wo-frame { width: 100%; height: calc(100vh - 235px); min-height: 480px; border: 1px solid var(--line); border-radius: 16px; background: #e9e4dc; display: block; }
+.orow { gap: 12px; }

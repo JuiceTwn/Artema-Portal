@@ -3,10 +3,11 @@
  * Door order forms: the Excel order form for one door (file name like "Door 26-611.xlsm", door number yy-xxx), read where it lives.
  *
  * Nothing is copied into a database yet: the shared "Door Orders" folder is the source of truth, and each form is read on demand
- * (and remembered until the file changes). Two views are built from a form:
- *  - summary(): the few fields a department needs at a glance (for the CNC department: panel, hinges, lock prepping)
- *  - sheet():   the sheet as people see it in Excel, to scroll and read
- * Fields are found by their printed label ("Hinge Side:") rather than by cell address, so a form that moves a row still reads right.
+ * (and remembered until the file changes). Three things are built from a form:
+ *  - summary(): every detail the departments need, as plain text, found by the label printed on the form ("Hinge Side:")
+ *               rather than by cell address, so a form that moves a row still reads right
+ *  - sheet():   the original sheet as people see it in Excel, to scroll and read
+ *  - the work order (workorder.js) is laid out from a summary
  */
 const fs = require('fs');
 const path = require('path');
@@ -22,13 +23,31 @@ const clean = v => String(v == null ? '' : v).replace(/\s+/g, ' ').trim();
 /** Blank cells in the form read "-", 0 or FALSE: all of those mean "nothing here". */
 const isBlank = v => v === '' || /^(-+|0|0\.0+|false|n\/?a)$/i.test(v);
 
-/** What a department sees for one door. [key, label printed on the form, which text counts as the value]. */
-const FIELDS = [
-  ['customer', 'Customer Name'], ['tag', 'Tag Name'], ['po', 'PO#'], ['ship', 'Target Ship Date'],
-  ['series', 'Panel Series'], ['type', 'Panel type'], ['width', 'Panel Width'], ['height', 'Panel Height'],
-  ['swing', 'Panel Swing'], ['hingeSide', 'Hinge Side'], ['hingeFinish', 'Hinge Finish'], ['hingeQty', 'Hinge Quantity'],
-  ['deadbolt', 'Deadbolt Prepping'], ['multipoint', 'Multi-point lock type'],
-];
+/**
+ * Every detail read from a form: key -> the label printed on it. `multi` joins several cells beside the label (a size is two
+ * cells); `below` takes the cell under the label. When a label appears twice (the sidelight repeats "Panel type") the top one wins.
+ */
+const FIELDS = {
+  // the order
+  customer: ['Customer Name'], project: ['Tag Name'], po: ['PO#'], orderDate: ['Order Date'], ship: ['Target Ship Date'],
+  orderNo: ['Order Number'], price: ['Net Price'],
+  // the door panel
+  series: ['Panel Series'], ptype: ['Panel type'], width: ['Panel Width'], height: ['Panel Height'], swing: ['Panel Swing'],
+  extFinish: ['Panel exterior finish'], intFinish: ['Panel interior finish'],
+  // hinges and locks
+  hingeSide: ['Hinge Side'], hingeFinish: ['Hinge Finish'], hingeType: ['Hinge Type', { below: true }], hingeQty: ['Hinge Quantity'],
+  deadbolt: ['Deadbolt Prepping'], multipoint: ['Multi-point lock type'], mpPassive: ['MP lock on Passive panel'], dummy: ['Dummy Handle?'],
+  // the frame
+  frameOptions: ['Frame Options'], frameType: ['Frame Type'], grain: ['Grain Texture'],
+  doorFrame: ['Door Frame Size', { multi: true }], overallFrame: ['Overall Frame Size', { multi: true }], finishedFrame: ['Finished Frame Size', { multi: true }],
+  jamb: ['Jamb Thickness'], shim: ['Shim Thickness'], brickSize: ['Brickmold Size', { multi: true }], brickType: ['Brickmold Type'], brickAcc: ['BM Accessories'],
+  sillType: ['Sill Type'], sillDepth: ['Sill Depth'], sillOptions: ['Sill Options'], sillColour: ['Sill Colour'], transom: ['Transom Frame Options'],
+  // colour
+  frameOut: ['Frame colour out'], frameIn: ['Frame colour in'], weather: ['Weatherstrip Colour'], strike: ['Strike Finish'],
+  // glass and hardware
+  glassSize: ['Main Door glass size'], glassStyle: ['Glass style or code'], glassOptions: ['Glass options'], glassFrame: ['Glass frame type'],
+  sidelight: ['Sidelight type'], handleStyle: ['Handle style'], lever: ['Lever style'], handleFinish: ['Handle finish'], hardware: ['Hardware Options'],
+};
 
 const norm = s => clean(s).toLowerCase().replace(/[:?]+$/, '').trim();
 
@@ -50,13 +69,17 @@ function indexLabels(ws, XLSX) {
 }
 
 /** The value printed beside a label: the next filled cell to its right (a few cells for a label in the left block, one in the right block). */
-function valueOf(ws, idx, label, XLSX, { below = false } = {}) {
+function valueOf(ws, idx, label, XLSX, { below = false, multi = false } = {}) {
   const at = (idx.get(norm(label)) || [])[0];
   if (!at) return '';
   if (below) return cellText(ws, at.r + 1, at.c, XLSX);
-  const span = at.c <= 2 ? 3 : 1;
-  for (let k = 1; k <= span; k++) { const t = cellText(ws, at.r, at.c + k, XLSX); if (t) return t; }
-  return '';
+  const span = at.c <= 2 ? (multi ? 5 : 3) : 1;
+  const found = [];
+  for (let k = 1; k <= span; k++) {
+    const t = cellText(ws, at.r, at.c + k, XLSX);
+    if (t && !isBlank(t)) { found.push(t); if (!multi) break; }
+  }
+  return multi ? found.join(' × ') : (found[0] || cellText(ws, at.r, at.c + 1, XLSX));
 }
 
 const doorFromName = name => { const m = /(\d{2}-\d{1,4})/.exec(name); return m ? m[1] : ''; };
@@ -104,19 +127,24 @@ class Orders {
     return entry;
   }
 
+  /** Everything read from one form: { path, rel, name, mtime, size, door, f: { key: text } }, or `error` when it can't be read as an order form. */
   summary(f) {
     const base = { path: `${FOLDER}/${f.rel}`, rel: f.rel, name: f.name, mtime: f.mtime, size: f.size, door: doorFromName(f.name) };
     try {
       const { ws, idx } = this.open(f.rel);
       if (!ws || !(idx.has('panel series') || idx.has('hinge side'))) return { ...base, error: 'This does not look like a door order form' };
-      const out = { ...base };
-      for (const [key, label] of FIELDS) { const v = valueOf(ws, idx, label, this.XLSX); out[key] = isBlank(v) ? '' : v; }
+      const out = {};
+      for (const [key, [label, opts]] of Object.entries(FIELDS)) { const v = valueOf(ws, idx, label, this.XLSX, opts); out[key] = isBlank(v) ? '' : v; }
+      out.size = out.width || out.height ? `${out.width || '?'} × ${out.height || '?'}` : '';
       const door = valueOf(ws, idx, 'Door Number', this.XLSX);
-      if (door && !isBlank(door)) out.door = door;
-      const ht = valueOf(ws, idx, 'Hinge Type', this.XLSX, { below: true });
-      out.hingeType = isBlank(ht) ? '' : ht;
-      return out;
+      return { ...base, door: door && !isBlank(door) ? door : base.door, f: out };
     } catch (e) { return { ...base, error: 'Could not read this file' }; }
+  }
+
+  find(rel) {
+    const f = this.files().find(x => x.rel === rel);
+    if (!f) throw new HttpError(404, 'Not found');
+    return this.summary(f);
   }
 
   list() {

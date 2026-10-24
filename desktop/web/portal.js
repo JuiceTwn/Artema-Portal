@@ -353,15 +353,26 @@
   }
 
   // ---------- door orders ----------
-  // The order forms in the shared "Door Orders" folder. The list shows only what the CNC department works from; opening a door
-  // shows the whole form as a sheet to scroll through.
-  const dash = v => (v ? esc(v) : '<span class="faint">—</span>');
-  function prepOf(o) {
-    const p = [o.deadbolt && `DB prep ${esc(o.deadbolt)}`, o.multipoint && `Multipoint ${esc(o.multipoint)}`].filter(Boolean);
-    return p.length ? p.join('<br>') : '<span class="faint">—</span>';
-  }
+  // The order forms in the shared "Door Orders" folder. Every department sees the same orders, with the columns it works from
+  // first; opening a door shows a clean work order (the same page that becomes the PDF) or, on request, the original Excel sheet.
+  const DEPTS = ['CNC', 'Frame Prep', 'Paint', 'Assembly', 'Office'];
+  const dash = v => (v ? esc(v) : '<span class="faint">\u2014</span>');
+  const both = (a, b) => [a, b].filter(Boolean).join(' \u00b7 ');
+  const COLS = {
+    CNC: [['Panel series', f => f.series], ['Type', f => f.ptype], ['Size (W \u00d7 H)', f => f.size], ['Swing', f => f.swing], ['Hinge side', f => f.hingeSide],
+      ['Hinges', f => (f.hingeQty || f.hingeFinish || f.hingeType ? '<b>' + esc(f.hingeQty || '?') + '</b> \u00d7 ' + (both(f.hingeFinish, f.hingeType) ? esc(both(f.hingeFinish, f.hingeType)) : '\u2014') : ''), true],
+      ['Prepping', f => [f.deadbolt && 'DB prep ' + esc(f.deadbolt), f.multipoint && 'Multipoint ' + esc(f.multipoint)].filter(Boolean).join('<br>'), true]],
+    'Frame Prep': [['Frame type', f => f.frameType], ['Door frame size', f => f.doorFrame], ['Jamb', f => f.jamb], ['Sill', f => both(f.sillType, f.sillDepth)], ['Brickmold', f => both(f.brickSize, f.brickType)], ['Hinges', f => both(f.hingeQty && f.hingeQty + ' hinges', f.hingeSide)]],
+    Paint: [['Panel exterior', f => f.extFinish], ['Panel interior', f => f.intFinish], ['Frame out', f => f.frameOut], ['Frame in', f => f.frameIn], ['Sill colour', f => f.sillColour], ['Hinge finish', f => f.hingeFinish]],
+    Assembly: [['Panel', f => both(f.series, f.ptype)], ['Size (W \u00d7 H)', f => f.size], ['Glass', f => both(f.glassSize, f.glassStyle)], ['Handle', f => both(f.handleStyle, f.lever)], ['Hardware', f => f.hardware], ['Swing', f => both(f.swing, f.hingeSide)]],
+    Office: [['Customer', f => f.customer], ['Project', f => f.project], ['PO', f => f.po], ['Order #', f => f.orderNo], ['Ordered', f => f.orderDate], ['Ship date', f => f.ship], ['Price', f => f.price]],
+  };
+  const myDept = () => (DEPTS.includes(S.me && S.me.tag) ? S.me.tag : 'Office');
+  const curDept = () => S.dept || myDept();
+  const deptTabs = (id, on) => '<div class="stabs dtabs" id="' + id + '">' + DEPTS.map(d => '<button class="' + (d === on ? 'on' : '') + '" data-dept="' + esc(d) + '">' + esc(d) + (d === myDept() && S.me && S.me.tag ? '<i>you</i>' : '') + '</button>').join('') + '</div>';
+
   async function loadOrders(force) {
-    if (S.order) return;                                   // someone is reading a sheet: leave it alone
+    if (S.order) return;                                   // someone is reading an order: leave it alone
     const { items } = await api('orders');
     const snap = JSON.stringify(items);
     if (!force && snap === S.ordersSnap) return;
@@ -369,51 +380,64 @@
     renderOrders();
   }
   function renderOrders() {
-    const items = S.orderItems || [];
+    const items = S.orderItems || [], dept = curDept(), cols = COLS[dept];
     $('#orders-crumbs').innerHTML = '<button>Door orders</button>';
-    $('#orders-sub').textContent = items.length ? `${items.length} door${items.length === 1 ? '' : 's'} · CNC view: panel, hinges and lock prepping` : '';
+    $('#orders-sub').textContent = items.length ? items.length + ' door' + (items.length === 1 ? '' : 's') + ' \u00b7 ' + dept + ' view' : '';
     $('#orders-actions').innerHTML = '';
     if (!items.length) {
       $('#orders').innerHTML = `<div class="empty"><div class="ring">${icon('door')}</div><h3>No door orders yet</h3><div>Put the Excel order forms in the <b>Door Orders</b> folder and they show up here.</div><button class="btn primary big" id="orders-open">${icon('folder')}Open the folder</button></div>`;
       $('#orders-open').onclick = () => go('Door Orders');
       return;
     }
-    $('#orders').innerHTML = `<div class="otable"><div class="orow oth"><div>Door</div><div>Panel series</div><div>Type</div><div>Size (W × H)</div><div>Swing</div><div>Hinge side</div><div>Hinges</div><div>Prepping</div></div>${items.map((o, i) => o.error
-      ? `<div class="orow item" data-i="${i}"><div class="door">${dash(o.door || o.name)}</div><div class="bad" style="grid-column: span 7">${esc(o.error)}</div></div>`
-      : `<div class="orow item" data-i="${i}" tabindex="0">
-        <div class="door"><b>${dash(o.door)}</b><span class="muted sm">${esc(o.customer || '')}</span></div>
-        <div data-l="Panel series">${dash(o.series)}</div><div data-l="Type">${dash(o.type)}</div>
-        <div data-l="Size">${o.width || o.height ? `${esc(o.width || '?')} × ${esc(o.height || '?')}` : dash('')}</div>
-        <div data-l="Swing">${dash(o.swing)}</div><div data-l="Hinge side">${dash(o.hingeSide)}</div>
-        <div data-l="Hinges">${o.hingeQty || o.hingeFinish || o.hingeType ? `<b>${esc(o.hingeQty || '?')}</b> × ${[o.hingeFinish, o.hingeType].filter(Boolean).map(esc).join(' · ') || dash('')}` : dash('')}</div>
-        <div data-l="Prepping">${prepOf(o)}</div></div>`).join('')}</div>`;
+    const grid = 'grid-template-columns: minmax(0, 1.25fr) ' + cols.map(c => (c[2] ? 'minmax(0, 1.6fr)' : 'minmax(0, 1fr)')).join(' ');
+    const head = '<div class="orow oth" style="' + grid + '"><div>Door</div>' + cols.map(c => '<div>' + esc(c[0]) + '</div>').join('') + '</div>';
+    const rows = items.map((o, i) => {
+      if (o.error) return '<div class="orow item" style="' + grid + '" data-i="' + i + '"><div class="door">' + dash(o.door || o.name) + '</div><div class="bad" style="grid-column: 2 / -1">' + esc(o.error) + '</div></div>';
+      const sub = dept === 'Office' ? (o.f.ship ? 'Ships ' + o.f.ship : '') : (o.f.customer || '');
+      return '<div class="orow item" style="' + grid + '" data-i="' + i + '" tabindex="0"><div class="door"><b>' + dash(o.door) + '</b><span class="muted sm">' + esc(sub) + '</span></div>'
+        + cols.map(c => '<div data-l="' + esc(c[0]) + '">' + (c[2] ? (c[1](o.f) || dash('')) : dash(c[1](o.f))) + '</div>').join('') + '</div>';
+    }).join('');
+    $('#orders').innerHTML = deptTabs('dtabs', dept) + '<div class="otable">' + head + rows + '</div>';
+    $$('#dtabs [data-dept]').forEach(b => b.onclick = () => { S.dept = b.dataset.dept; renderOrders(); });
     $$('#orders .orow.item').forEach(r => {
       const o = items[+r.dataset.i];
       const open = () => openOrder(o);
       r.onclick = open; r.onkeydown = e => { if (e.key === 'Enter') open(); };
     });
   }
-  async function openOrder(o, sheet) {
-    S.order = o;
-    $('#orders-crumbs').innerHTML = `<button id="oc-back">Door orders</button><span class="sep">/</span><button>${esc(o.door || o.name)}</button>`;
+  /** One door: the work order for a department, or the original sheet. */
+  async function openOrder(o, mode, sheet) {
+    S.order = o; S.orderMode = mode || 'workorder';
+    const dept = curDept();
+    $('#orders-crumbs').innerHTML = '<button id="oc-back">Door orders</button><span class="sep">/</span><button>' + esc(o.door || o.name) + '</button>';
     $('#oc-back').onclick = () => { S.order = null; loadOrders(true).catch(e => toast(e.message, true)); };
-    $('#orders-sub').textContent = [o.customer, o.tag].filter(Boolean).join(' · ');
-    $('#orders-actions').innerHTML = `<a class="btn" href="${fileUrl('Door Orders/' + o.rel)}" download>${icon('download')}Download</a>`;
-    $('#orders').innerHTML = '<div class="empty"><div>Opening…</div></div>';
+    $('#orders-sub').textContent = both(o.f && o.f.customer, o.f && o.f.project);
+    const wo = 'path=' + q(o.rel) + '&dept=' + q(dept);
+    $('#orders-actions').innerHTML = S.orderMode === 'workorder'
+      ? `<button class="btn" id="o-sheet">${icon('files')}Original sheet</button><button class="btn" id="o-print">Print</button><a class="btn primary" href="/api/orders/pdf?${wo}" download>${icon('download')}Download PDF</a>`
+      : `<button class="btn" id="o-wo">Work order</button><a class="btn" href="${fileUrl('Door Orders/' + o.rel)}" download>${icon('download')}Download Excel</a>`;
+    if (S.orderMode === 'workorder') {
+      $('#orders').innerHTML = deptTabs('wtabs', dept) + '<iframe class="wo-frame" id="wo-frame" title="Work order" src="/api/orders/workorder?' + wo + '"></iframe>';
+      $$('#wtabs [data-dept]').forEach(b => b.onclick = () => { S.dept = b.dataset.dept; openOrder(o); });
+      $('#o-sheet').onclick = () => openOrder(o, 'sheet');
+      $('#o-print').onclick = () => { try { $('#wo-frame').contentWindow.print(); } catch { toast("Printing isn't available here. Use Download PDF.", true); } };
+      return;
+    }
+    $('#o-wo').onclick = () => openOrder(o);
+    $('#orders').innerHTML = '<div class="empty"><div>Opening\u2026</div></div>';
     try {
-      const d = await api(`orders/sheet?path=${q(o.rel)}&sheet=${q(sheet || '')}`);
+      const d = await api('orders/sheet?path=' + q(o.rel) + '&sheet=' + q(sheet || ''));
       if (S.order !== o) return;
       const covered = new Set(), spans = new Map();
       d.merges.forEach(m => { spans.set(m.r + ',' + m.c, m); for (let r = 0; r < m.rs; r++) for (let c = 0; c < m.cs; c++) if (r || c) covered.add((m.r + r) + ',' + (m.c + c)); });
-      const body = d.rows.map((row, r) => `<tr>${row.map((v, c) => {
+      const body = d.rows.map((row, r) => '<tr>' + row.map((v, c) => {
         const k = r + ',' + c; if (covered.has(k)) return '';
         const m = spans.get(k);
-        return `<td${m && m.rs > 1 ? ` rowspan="${m.rs}"` : ''}${m && m.cs > 1 ? ` colspan="${m.cs}"` : ''}>${esc(v)}</td>`;
-      }).join('')}</tr>`).join('');
-      $('#orders').innerHTML = `<div class="stabs">${d.sheets.map(n => `<button class="${n === d.name ? 'on' : ''}" data-sheet="${esc(n)}">${esc(n)}</button>`).join('')}</div>
-        <div class="sheet-wrap"><table class="sheet">${body}</table></div>`;
-      $$('#orders [data-sheet]').forEach(b => b.onclick = () => openOrder(o, b.dataset.sheet));
-    } catch (e) { $('#orders').innerHTML = `<div class="empty"><h3>Couldn't open this form</h3><div>${esc(e.message)}</div></div>`; }
+        return '<td' + (m && m.rs > 1 ? ' rowspan="' + m.rs + '"' : '') + (m && m.cs > 1 ? ' colspan="' + m.cs + '"' : '') + '>' + esc(v) + '</td>';
+      }).join('') + '</tr>').join('');
+      $('#orders').innerHTML = '<div class="stabs">' + d.sheets.map(n => '<button class="' + (n === d.name ? 'on' : '') + '" data-sheet="' + esc(n) + '">' + esc(n) + '</button>').join('') + '</div><div class="sheet-wrap"><table class="sheet">' + body + '</table></div>';
+      $$('#orders [data-sheet]').forEach(b => b.onclick = () => openOrder(o, 'sheet', b.dataset.sheet));
+    } catch (e) { $('#orders').innerHTML = '<div class="empty"><h3>Couldn\'t open this form</h3><div>' + esc(e.message) + '</div></div>'; }
   }
 
   // ---------- computers ----------
@@ -441,14 +465,14 @@
   }
 
   async function loadComputers() {
-    const { devices, address } = await api('devices');
+    const { devices, address, departments = [] } = await api('devices');
     if (document.activeElement?.matches?.('.role-sel')) return;          // don't pull a dropdown away while someone is choosing
     const me = S.role = (await api('me')).role;
     const manage = rankOf(me) >= 1;           // admins and the main computer run the suite; everyone else just sees who is connected
     const host = !!S.info?.local;
     $('#pc-count').textContent = devices.length;
     $('#suite-title').textContent = manage ? 'Control suite' : 'Computers';
-    $('#suite-sub').textContent = manage ? 'Who is connected, and what each computer is allowed to do' : 'Everything connected to this Portal';
+    $('#suite-sub').textContent = manage ? 'Who is connected, which department each computer is in, and what it is allowed to do' : 'Everything connected to this Portal';
 
     const joined = devices.filter(d => !d.host);
     const count = r => joined.filter(d => d.role === r).length;
@@ -461,11 +485,12 @@
 
     const rows = devices.map(d => `
       <div class="trow${d.online ? '' : ' off'}">
-        <div class="who"><div class="pc">${icon('monitor')}</div><div class="nm"><b>${esc(d.name)}</b>${d.host ? '<span class="badge">Main</span>' : ''}${d.tag ? `<span class="tagchip">${esc(d.tag)}</span>` : ''}
+        <div class="who"><div class="pc">${icon('monitor')}</div><div class="nm"><b>${esc(d.name)}</b>${d.host ? '<span class="badge">Main</span>' : ''}
           <div class="muted sm">${esc(d.ip || '')}${d.version ? ` · v${esc(d.version)}` : ''}</div></div></div>
         <div class="state"><span class="dot ${d.online ? '' : 'idle'}"></span>${d.online ? 'Online' : d.last ? 'Seen ' + ago(d.last) : 'Offline'}</div>
         <div class="lvl">${d.host ? '<span class="rolechip r-dev">Dev</span>' : manage ? roleSelect(d, me) : `<span class="rolechip r-${d.role}">${roleName(d.role)}</span>`}</div>
-        <div class="acts">${d.host || !manage || rankOf(d.role) > rankOf(me) ? '' : `<button class="btn" data-tag="${esc(d.id)}" data-cur="${esc(d.tag || '')}">${icon('pencil')}Tag</button><button class="btn danger" data-rm="${esc(d.id)}" data-name="${esc(d.name)}">${icon('trash')}Remove</button>`}</div>
+        <div class="lvl">${d.host ? '<span class="muted sm">Main computer</span>' : manage ? `<select class="role-sel dept-sel" data-deptof="${esc(d.id)}" data-name="${esc(d.name)}" data-cur="${esc(d.tag || '')}" aria-label="Department for ${esc(d.name)}"><option value="">No department</option>${departments.map(x => `<option value="${esc(x)}"${x === d.tag ? ' selected' : ''}>${esc(x)}</option>`).join('')}</select>` : d.tag ? `<span class="tagchip">${esc(d.tag)}</span>` : '<span class="muted sm">\u2014</span>'}</div>
+        <div class="acts">${d.host || !manage || rankOf(d.role) > rankOf(me) ? '' : `<button class="btn danger" data-rm="${esc(d.id)}" data-name="${esc(d.name)}">${icon('trash')}Remove</button>`}</div>
       </div>`).join('');
 
     let pin = '', hist = [], su = null;
@@ -524,9 +549,10 @@
       try { await api('devices/role', { id, role: next }); toast(`${name} is now ${roleName(next)}`); } catch (e) { toast(e.message, true); }
       loadComputers();
     });
-    $$('[data-tag]').forEach(b => b.onclick = async () => {
-      const v = await ask({ title: 'Tag this computer', text: 'A short label like CNC, Office or Edgebander.', value: b.dataset.cur, ok: 'Save' });
-      if (v !== null) { try { await api('devices/tag', { id: b.dataset.tag, tag: v }); loadComputers(); } catch (e) { toast(e.message, true); } }
+    $$('[data-deptof]').forEach(sel => sel.onchange = async () => {
+      const { deptof: id, name } = sel.dataset;
+      try { await api('devices/department', { id, dept: sel.value }); toast(sel.value ? `${name} is now in ${sel.value}` : `${name} has no department`); } catch (e) { toast(e.message, true); }
+      loadComputers();
     });
     $$('[data-rm]').forEach(b => b.onclick = async () => {
       if (await ask({ title: `Remove ${b.dataset.name}?`, text: 'That computer will stop syncing until it connects again.', ok: 'Remove', danger: true })) {
@@ -557,9 +583,9 @@
     try { S.info = await api('info'); } catch { setConn(false); }
     await initWho();
     let me = null;
-    try { me = await api('me'); S.info = await api('info'); } catch { setConn(false); }          // signs in first if this browser has to
+    try { me = await api('me'); S.me = me; S.info = await api('info'); } catch { setConn(false); }          // signs in first if this browser has to
     api('devices').then(d => $('#pc-count').textContent = d.devices.length).catch(() => { });
     loadQuick();
-    if (me && /^cnc$/i.test(me.tag || '')) setView('orders'); else refresh(true);          // the CNC computers open on their door orders
+    if (me && DEPTS.includes(me.tag) && me.tag !== 'Office') setView('orders'); else refresh(true);          // production computers open on their door orders
   })();
 })();

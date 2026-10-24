@@ -6,6 +6,8 @@ const {
 } = require('./util');
 const { FailLimiter, parseCookies, sessionCookie, joinProof, normPin, prettyPin, safeEqual, COOKIE, PORTAL_HEADERS } = require('./security');
 const { can, canAssign, isRole, rank } = require('./roles');
+const { DEPARTMENTS, departmentOf } = require('./departments');
+const { renderWorkOrder } = require('./workorder');
 
 // With no role store (a caller that doesn't pass one) nobody is promoted: every joined computer is `general`.
 const NO_ROLES = { get: () => 'general', set() { throw new HttpError(503, 'Roles are unavailable right now'); }, forget() { }, all: () => ({}) };
@@ -90,14 +92,30 @@ function createPortalServer(store, port, webDir, hooks = {}) {
 
       if (req.method === 'GET') {
         if (ep === 'me') return sendJson(res, { kind: auth.kind, name: auth.name, role: auth.role, tag: (auth.id && store.devices[auth.id] && store.devices[auth.id].tag) || '' });
-        if (ep === 'orders' || ep === 'orders/sheet') {
+        if (ep.startsWith('orders')) {
           if (!hooks.orders) throw new HttpError(404, 'Not found');
-          return sendJson(res, ep === 'orders' ? { items: hooks.orders.list() } : hooks.orders.sheet(String(q.path || ''), String(q.sheet || '')));
+          if (ep === 'orders') return sendJson(res, { items: hooks.orders.list(), departments: DEPARTMENTS });
+          if (ep === 'orders/sheet') return sendJson(res, hooks.orders.sheet(String(q.path || ''), String(q.sheet || '')));
+          if (ep === 'orders/workorder' || ep === 'orders/pdf') {
+            const order = hooks.orders.find(String(q.path || '')), dept = departmentOf(q.dept) || 'Office';
+            if (order.error) throw new HttpError(400, order.error);
+            const html = renderWorkOrder(order, dept);
+            if (ep === 'orders/workorder') {
+              // a page of our own, shown inside the Portal: no scripts, nothing from outside
+              res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store', 'X-Frame-Options': 'SAMEORIGIN', 'Content-Security-Policy': "default-src 'none'; img-src data:; style-src 'unsafe-inline'; frame-ancestors 'self'" });
+              return res.end(html);
+            }
+            if (!hooks.renderPdf) throw new HttpError(501, 'Making a PDF works in the installed app. Use Print instead.');
+            const pdf = await hooks.renderPdf(html);
+            const name = `Work order ${order.door || 'door'} - ${dept}.pdf`;
+            res.writeHead(200, { 'Content-Type': 'application/pdf', 'Content-Length': pdf.length, 'Cache-Control': 'no-store', 'Content-Disposition': `attachment; filename*=UTF-8''${encodeURIComponent(name)}` });
+            return res.end(pdf);
+          }
         }
         if (ep === 'list') return sendJson(res, { path: store.safe(q.path).rel, items: store.list(q.path) });
         if (ep === 'tree') return sendJson(res, { items: store.tree() });
         if (ep === 'search') return sendJson(res, { items: store.search(q.q) });
-        if (ep === 'devices') return sendJson(res, { devices: store.deviceList().map(d => ({ ...d, role: d.host ? 'dev' : roles.get(d.id) })), address: `${lanIp()}:${port}` });
+        if (ep === 'devices') return sendJson(res, { departments: DEPARTMENTS, devices: store.deviceList().map(d => ({ ...d, role: d.host ? 'dev' : roles.get(d.id) })), address: `${lanIp()}:${port}` });
         if (ep === 'devices/history') {
           need('devices.role');
           const names = Object.fromEntries(store.deviceList().map(d => [d.id, d.name]));
@@ -147,6 +165,15 @@ function createPortalServer(store, port, webDir, hooks = {}) {
           if (rank(roles.get(String(b.id))) > rank(auth.role)) throw new HttpError(403, "This computer's role doesn't allow that");
           store.removeDevice(String(b.id)); roles.forget(String(b.id));
           return sendJson(res, { ok: true });
+        }
+        if (ep === 'devices/department') {
+          need('devices.tag');          // departments are handed out like access levels: by admins and the main computer
+          const dept = b.dept ? departmentOf(b.dept) : '';
+          if (b.dept && !dept) throw new HttpError(400, 'Unknown department');
+          if (!store.devices[String(b.id)]) throw new HttpError(404, 'Not found');
+          store.setTag(String(b.id), dept);
+          log(`department: ${store.devices[String(b.id)].name} is now ${dept || 'none'} (set by ${who})`);
+          return sendJson(res, { ok: true, department: dept });
         }
         if (ep === 'devices/tag') { need('devices.tag'); store.setTag(String(b.id), b.tag); return sendJson(res, { ok: true }); }
         if (ep === 'devices/role') {

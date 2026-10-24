@@ -230,6 +230,16 @@ const hooks = {
   },
   reveal: full => { try { fs.statSync(full).isDirectory() ? shell.openPath(full) : shell.showItemInFolder(full); } catch { shell.openPath(path.dirname(full)); } },
   openFolder: f => shell.openPath(f),
+  // A work order as a PDF: the page is drawn by a hidden window (no scripts, no network) and printed to Letter paper.
+  renderPdf: async html => {
+    const file = path.join(os.tmpdir(), `artema-workorder-${process.pid}-${Date.now()}.html`);
+    fs.writeFileSync(file, html);
+    const w = new BrowserWindow({ show: false, webPreferences: { sandbox: true, javascript: false, spellcheck: false } });
+    try {
+      await w.loadFile(file);
+      return await w.webContents.printToPDF({ pageSize: 'Letter', printBackground: true, margins: { marginType: 'none' } });
+    } finally { w.destroy(); try { fs.unlinkSync(file); } catch { /* temp folder */ } }
+  },
   onConflict: c => notify('Two main computers found', `“${c.name}” (${c.address}) is also acting as a main computer. Open Setup and status to sort it out.`),
   onRelocated: () => notify('Reconnected', 'The main computer changed address. Artema Portal followed it.'),
   onUpdateReady,
