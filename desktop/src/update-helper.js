@@ -44,15 +44,34 @@ function launch() {
   for (let i = 0; i < 120 && alive(pid); i++) await sleep(500);
   if (alive(pid)) { say('the app did not close; nothing was changed'); return; }
 
-  rm(oldDir); rm(failedDir);
-  try { await retry(() => fs.renameSync(appDir, oldDir)); } catch (e) {
-    say(`could not move the old app aside (${e.message}); starting it again unchanged`);
-    launch(); return;
-  }
-  try { fs.renameSync(stageDir, appDir); } catch (e) {
-    say(`could not put the new app in place (${e.message}); putting the old one back`);
-    try { fs.renameSync(oldDir, appDir); } catch (e2) { say(`could not restore the old app: ${e2.message}`); }
-    launch(); return;
+  // The app itself, plus any other folders that must change with it (the server also swaps the client payload it hands out).
+  const swaps = [{ dir: appDir, stage: stageDir, old: oldDir }, ...(job.extra || [])];
+  for (const s of swaps) rm(s.old);
+  rm(failedDir);
+  const moved = [];
+  /** Puts every folder swapped so far back as it was. The new main app is kept as `.failed` when asked, so a crash can be looked at. */
+  const restore = keepFailed => {
+    const errors = [];
+    for (const s of [...moved].reverse()) {
+      try {
+        if (s.live) { if (keepFailed && s.dir === appDir) fs.renameSync(s.dir, failedDir); else rm(s.dir); }
+        fs.renameSync(s.old, s.dir);
+      } catch (e) { errors.push(e.message); }
+    }
+    return errors;
+  };
+  for (const s of swaps) {
+    try { await retry(() => fs.renameSync(s.dir, s.old)); } catch (e) {
+      say(`could not move ${path.basename(s.dir)} aside (${e.message}); starting the old version again unchanged`);
+      restore(false); launch(); return;
+    }
+    s.live = false; moved.push(s);
+    try { fs.renameSync(s.stage, s.dir); s.live = true; } catch (e) {
+      say(`could not put the new ${path.basename(s.dir)} in place (${e.message}); putting the old one back`);
+      const errors = restore(false);
+      if (errors.length) say(`could not restore everything: ${errors.join('; ')}`);
+      launch(); return;
+    }
   }
   rm(markerPath);
 
@@ -63,13 +82,11 @@ function launch() {
 
   if (exit && (exit.code !== 0)) {
     say(`version ${version} stopped straight away (${exit.signal || 'exit code ' + exit.code}); going back to the old version`);
-    try {
-      fs.renameSync(appDir, failedDir);
-      fs.renameSync(oldDir, appDir);
-      launch();
-    } catch (e) { say(`could not go back: ${e.message}`); }
+    const errors = restore(true);
+    if (errors.length) say(`could not go back: ${errors.join('; ')}`); else launch();
     return;
   }
   say(`version ${version} is running`);
-  rm(oldDir);
+  for (const s of swaps) rm(s.old);
+  for (const p of job.cleanup || []) rm(p);
 })().catch(e => say(`update helper failed: ${e && e.stack || e}`));

@@ -360,6 +360,21 @@
   const roleSelect = (d, me) => `<select class="role-sel r-${d.role}" data-role="${esc(d.id)}" data-name="${esc(d.name)}" data-cur="${d.role}" aria-label="Access level for ${esc(d.name)}"${ROLES.some(r => canAssignRole(me, d.role, r[0]) && r[0] !== d.role) ? '' : ' disabled'}>${
     ROLES.map(([k, label]) => `<option value="${k}"${k === d.role ? ' selected' : ''}${canAssignRole(me, d.role, k) ? '' : ' disabled'}>${label}</option>`).join('')}</select>`;
 
+  // The main computer's own software, updated from the private GitHub repository. Only the main computer's "dev" level sees it.
+  function updatePanel(su) {
+    const busy = ['checking', 'downloading', 'ready'].includes(su.state);
+    const bar = su.state === 'downloading' ? `<div class="bar"><i style="width:${su.progress || 0}%"></i></div>` : '';
+    const line = { none: `You’re up to date.${su.checked ? ` Checked ${ago(su.checked / 1000)}.` : ''}`, idle: 'Not checked yet.' }[su.state] || su.message;
+    const notes = su.state === 'available' && su.notes ? `<div class="notes muted sm">${esc(su.notes)}</div>` : '';
+    return `<div class="panel upd"><div class="panel-h"><h3>Server software</h3><span class="muted sm">${su.current ? 'v' + esc(su.current) : ''}</span></div>
+      <div class="upd-line ${su.state === 'error' || su.state === 'blocked' ? 'bad' : su.state === 'available' ? 'good' : ''}">${esc(line || '')}</div>${bar}${notes}
+      <div class="upd-btns">
+        ${su.state === 'unavailable' ? '' : `${su.state === 'available' ? `<button class="btn primary" id="su-install">Install v${esc(su.latest)}</button>` : `<button class="btn" id="su-check"${busy || !su.hasToken ? ' disabled' : ''}>Check now</button>`}
+        <button class="btn" id="su-token"${busy ? ' disabled' : ''}>${su.hasToken ? 'New token' : 'Connect GitHub'}</button>${su.hasToken ? `<button class="btn danger" id="su-untoken"${busy ? ' disabled' : ''}>Disconnect</button>` : ''}`}
+      </div>
+      <div class="muted sm">After the server updates, connected computers update themselves.</div></div>`;
+  }
+
   async function loadComputers() {
     const { devices, address } = await api('devices');
     if (document.activeElement?.matches?.('.role-sel')) return;          // don't pull a dropdown away while someone is choosing
@@ -388,7 +403,8 @@
         <div class="acts">${d.host || !manage || rankOf(d.role) > rankOf(me) ? '' : `<button class="btn" data-tag="${esc(d.id)}" data-cur="${esc(d.tag || '')}">${icon('pencil')}Tag</button><button class="btn danger" data-rm="${esc(d.id)}" data-name="${esc(d.name)}">${icon('trash')}Remove</button>`}</div>
       </div>`).join('');
 
-    let pin = '', hist = [];
+    let pin = '', hist = [], su = null;
+    if (me === 'dev') { try { su = await api('server/update'); } catch { /* shown next time */ } }
     if (manage) {
       try { pin = (await api('pin')).pin; } catch { /* shown next time */ }
       try { hist = (await api('devices/history')).items; } catch { /* shown next time */ }
@@ -406,6 +422,7 @@
             <div class="addr"><code id="addr">${esc(address)}</code><button class="btn" id="copy-addr">${icon('copy')}Copy</button></div>
             ${pin ? `<div class="addr" style="margin-top:10px"><code id="pin">${esc(pin)}</code><button class="btn" id="new-pin">New PIN</button></div>` : ''}
             <ol><li>On the new computer, open <b>Start Artema Portal</b>.</li><li>Choose <b>Connect to the main computer</b>.</li><li>It finds this one automatically${pin ? '. Enter the PIN above when it asks' : ', then asks for the PIN shown on the main computer'}.</li></ol></div>
+          ${su ? updatePanel(su) : ''}
           ${manage ? `<div class="panel"><h3>Access levels</h3><ul class="levels">${levels}</ul>
             <div class="muted sm">New computers start as General. ${host ? '' : 'You can’t grant a level above your own. '}Changes apply immediately.</div></div>
           <div class="panel"><h3>Recent changes</h3>${hist.length ? `<ul class="hist">${hist.slice(0, 8).map(h => `<li><b>${esc(h.name)}</b> ${roleName(h.old_role)} → ${roleName(h.new_role)}<span class="muted sm">${ago(h.at)}${h.by ? ' · ' + esc(h.by) : ''}</span></li>`).join('')}</ul>` : '<div class="muted sm">No access changes yet.</div>'}</div>` : ''}
@@ -416,6 +433,23 @@
       if (await ask({ title: 'Make a new PIN?', text: 'Computers that are already connected keep working. The old PIN stops working, and anyone signed in through a web browser will need the new one.', ok: 'New PIN', danger: true })) {
         try { await api('pin/rotate', {}); loadComputers(); } catch (e) { toast(e.message, true); }
       }
+    };
+    if ($('#su-check')) $('#su-check').onclick = async () => { try { await api('server/update/check', {}); } catch (e) { toast(e.message, true); } loadComputers(); };
+    if ($('#su-install')) $('#su-install').onclick = async () => {
+      if (!await ask({ title: `Install version ${su.latest}?`, text: 'The server downloads it, then restarts. Files stay where they are. Connected computers reconnect on their own and then update themselves, one by one.', ok: 'Install and restart' })) return;
+      try { await api('server/update/install', {}); } catch (e) { toast(e.message, true); }
+      loadComputers();
+    };
+    if ($('#su-token')) $('#su-token').onclick = async () => {
+      const v = await ask({ title: 'Connect to GitHub', text: (su.hasToken ? 'A token is saved. Paste a new one to replace it. ' : '') + 'Use a fine-grained GitHub token that can read this repository’s contents (read-only). It stays on this computer and is only sent to GitHub.', value: '', ok: 'Save' });
+      if (!v) return;
+      try { const r = await api('server/update/token', { token: v }); toast(r.state === 'error' ? r.message : 'Connected to GitHub', r.state === 'error'); } catch (e) { toast(e.message, true); }
+      loadComputers();
+    };
+    if ($('#su-untoken')) $('#su-untoken').onclick = async () => {
+      if (!await ask({ title: 'Disconnect from GitHub?', text: 'The saved token is deleted from this computer. You can connect again later.', ok: 'Disconnect', danger: true })) return;
+      try { await api('server/update/token', { token: '' }); } catch (e) { toast(e.message, true); }
+      loadComputers();
     };
     $$('[data-role]').forEach(sel => sel.onchange = async () => {
       const { role: id, name, cur } = sel.dataset, next = sel.value;

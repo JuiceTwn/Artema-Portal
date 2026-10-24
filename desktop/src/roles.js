@@ -24,7 +24,8 @@ const PERMISSIONS = {
   'devices.tag': 'admin',
   'devices.remove': 'admin',
   'devices.role': 'admin',          // admins hand out `general` and `admin`; only dev hands out `dev`: see canAssign
-  'files.reveal': 'dev',            // opens a folder on the main computer's own screen
+  'server.update': 'dev',           // installs new software on the main computer from GitHub
+  'files.reveal': 'dev',           // opens a folder on the main computer's own screen
 };
 
 /** May this role do this action? Unknown actions are open; unknown roles can do nothing that is restricted. */

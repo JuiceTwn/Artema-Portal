@@ -153,6 +153,7 @@ async function quit() {
 const windowVisible = () => !!(win && !win.isDestroyed() && win.isVisible());
 function onUpdateReady(info) {
   rebuildTray();
+  if (info.now) return applyUpdate();          // the person pressed "Install" on the main computer: no waiting for the window to close
   if (windowVisible()) notify('Update ready', `Version ${info.version} installs as soon as you close the window.`);
   else applyUpdate();
 }
@@ -164,7 +165,7 @@ async function applyUpdate() {
   try {
     const helper = path.join(os.tmpdir(), `artema-update-${process.pid}-${Date.now()}.js`);
     fs.copyFileSync(path.join(__dirname, 'src', 'update-helper.js'), helper);          // run from outside the folder it is about to replace
-    const job = { pid: process.pid, appDir: info.appDir, stageDir: info.stageDir, oldDir: info.appDir + '.old', exe: process.execPath, args: ['--background'], version: info.version, logFile: path.join(app.getPath('userData'), 'update.log') };
+    const job = { pid: process.pid, appDir: info.appDir, stageDir: info.stageDir, oldDir: info.appDir + '.old', exe: process.execPath, args: info.args || ['--background'], extra: info.extra, cleanup: info.cleanup, version: info.version, logFile: path.join(app.getPath('userData'), 'update.log') };
     log(`restarting to install version ${info.version}`);
     spawn(process.execPath, [helper, JSON.stringify(job)], { detached: true, stdio: 'ignore', windowsHide: true, env: { ...process.env, ELECTRON_RUN_AS_NODE: '1' } }).unref();
     quitting = true;

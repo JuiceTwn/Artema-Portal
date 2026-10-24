@@ -99,6 +99,10 @@ function createPortalServer(store, port, webDir, hooks = {}) {
           const names = Object.fromEntries(store.deviceList().map(d => [d.id, d.name]));
           return sendJson(res, { items: roles.history ? roles.history(30).map(h => ({ ...h, name: names[h.device_id] || 'Removed computer' })) : [] });
         }
+        if (ep === 'server/update') {
+          need('server.update');
+          return sendJson(res, hooks.serverUpdate ? hooks.serverUpdate.status() : { state: 'unavailable', message: 'Updating from GitHub works in the installed server app.', hasToken: false });
+        }
         if (ep === 'activity') return sendJson(res, { items: store.activity.slice(-60).reverse() });
         if (ep === 'update/manifest' || ep === 'update/file') {
           // the client app this server was built with; any joined computer may ask for it
@@ -150,6 +154,14 @@ function createPortalServer(store, port, webDir, hooks = {}) {
           roles.set(id, role, who);
           log(`role: ${store.devices[id].name} is now ${role} (set by ${who})`);
           return sendJson(res, { ok: true, role });
+        }
+        if (ep.startsWith('server/update/')) {
+          need('server.update');
+          const su = hooks.serverUpdate;
+          if (!su) throw new HttpError(400, 'Updating from GitHub works in the installed server app.');
+          if (ep === 'server/update/check') return sendJson(res, await su.check());
+          if (ep === 'server/update/install') return sendJson(res, su.install());
+          if (ep === 'server/update/token') return sendJson(res, await su.setToken(String(b.token || '').trim()));
         }
         if (ep === 'pin/rotate') {
           need('pin.rotate');

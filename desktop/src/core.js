@@ -14,6 +14,7 @@ const {
 const { Store } = require('./store');
 const { RoleStore } = require('./roles');
 const { UpdateSource, UpdateClient } = require('./update');
+const { ServerUpdater } = require('./selfupdate');
 const { compare, valid } = require('./version');
 const { createPortalServer } = require('./server');
 const { Agent } = require('./agent');
@@ -53,6 +54,7 @@ class Core {
     // what the packaged app knows about itself: { version, electron, appDir, updateDir, updateFirstMs, updateEveryMs }. Empty in development.
     this.app = app;
     this.updater = null; this.updateTimers = [];
+    this.selfUpdater = null; this.selfTimers = [];
     this.dataDir = dataDir;
     this.webDir = webDir;
     this.desktopDir = desktopDir;
@@ -150,8 +152,9 @@ class Core {
           port = DEFAULT_PORT; this.saveCfg({ ...this.cfg, port });
         }
         this.roles = new RoleStore(path.join(this.dataDir, 'portal.db'));
+        this.startSelfUpdater();
         this.server = createPortalServer(this.store, port, this.webDir, {
-          appVersion: this.app.version || '', roles: this.roles, update: this.app.updateDir ? new UpdateSource(this.app.updateDir) : null, reveal: this.hooks.reveal, tls: this.tls, getPin: () => this.getPin(), rotatePin: () => this.rotatePin(), trustLoopback: () => this.trustLoopback,
+          appVersion: this.app.version || '', roles: this.roles, serverUpdate: this.serverUpdateApi(), update: this.app.updateDir ? new UpdateSource(this.app.updateDir) : null, reveal: this.hooks.reveal, tls: this.tls, getPin: () => this.getPin(), rotatePin: () => this.rotatePin(), trustLoopback: () => this.trustLoopback,
         });
         await new Promise((resolve, reject) => {
           this.server.once('error', reject);
@@ -208,7 +211,51 @@ class Core {
     this.updateTimers = []; this.updater = null;
   }
   /** What the restart helper needs, when a complete update is waiting; otherwise null. */
-  pendingUpdate() { return this.updater ? this.updater.ready() : null; }
+  pendingUpdate() { return this.updater ? this.updater.ready() : this.selfUpdater ? this.selfUpdater.ready() : null; }
+
+  // ---- the server updating itself from the private GitHub repository (server build, packaged app only)
+  startSelfUpdater() {
+    const a = this.app;
+    this.stopSelfUpdater();
+    if (this.edition !== 'server' || !a.appDir || !a.updateDir || !a.version || !a.electron) return;
+    this.selfUpdater = new ServerUpdater({
+      appDir: a.appDir, updateDir: a.updateDir, version: a.version, electron: a.electron, repo: this.cfg.github_repo, apiBase: process.env.ARTEMA_GITHUB_API,
+      getToken: () => this.secret('github_token'),
+    });
+    this.selfUpdater.tidy(false);
+    // look now and then so "a new version is ready" shows without anyone pressing anything; it never installs by itself
+    const check = () => this.selfUpdater && this.selfUpdater.check().catch(() => { });
+    this.selfTimers = [setTimeout(check, a.checkFirstMs != null ? a.checkFirstMs : 60000), setInterval(check, a.checkEveryMs || 6 * 3600 * 1000)];
+    const late = setTimeout(() => this.selfUpdater && this.selfUpdater.tidy(true), 90000); late.unref && late.unref();       // the rollback copy is kept until the new version has been running a while
+    this.selfTimers.push(late);
+    for (const t of this.selfTimers) t.unref && t.unref();
+  }
+  stopSelfUpdater() {
+    for (const t of this.selfTimers) { clearTimeout(t); clearInterval(t); }
+    this.selfTimers = []; this.selfUpdater = null;
+  }
+  serverUpdateApi() {
+    const hasToken = () => !!this.secret('github_token');
+    return {
+      status: () => this.selfUpdater ? this.selfUpdater.status() : { state: 'unavailable', message: 'Updating from GitHub works in the installed server app.', hasToken: hasToken(), current: this.app.version || '' },
+      check: async () => { if (!this.selfUpdater) throw new HttpError(400, 'Updating from GitHub works in the installed server app.'); return this.selfUpdater.check(); },
+      // downloading takes a while: answer straight away, and the page watches the progress
+      install: () => {
+        const u = this.selfUpdater;
+        if (!u) throw new HttpError(400, 'Updating from GitHub works in the installed server app.');
+        if (!u.busy) u.install().then(ok => { if (ok && this.hooks.onUpdateReady) this.hooks.onUpdateReady({ version: u.state.latest, now: true }); }).catch(e => log(`server update: ${e.message}`));
+        return u.status();
+      },
+      setToken: async token => {
+        if (token.length > 300 || /\s/.test(token)) throw new HttpError(400, "That doesn't look like a GitHub token");
+        const out = { ...this.cfg }; delete out.github_token; delete out.github_token_enc;
+        this.saveCfg(token ? this.withSecret(out, 'github_token', token) : out);
+        log(token ? 'GitHub access token saved' : 'GitHub access token removed');
+        if (!this.selfUpdater) return { state: 'unavailable', message: 'Updating from GitHub works in the installed server app.', hasToken: !!token };
+        return token ? this.selfUpdater.check() : (this.selfUpdater.set('no-token', 'Connect this server to GitHub to check for new versions.'), this.selfUpdater.status());       // checking right away tells them whether the token works
+      },
+    };
+  }
 
   /** The main computer's address changed (router reboot, new lease)? Find it again by its ID and carry on. */
   async relocateIfLost() {
@@ -236,6 +283,7 @@ class Core {
   async stopRole() {
     clearInterval(this.watchTimer); this.watchTimer = null;
     this.stopUpdater();
+    this.stopSelfUpdater();
     if (this.beacon) { this.beacon.stop(); this.beacon = null; }
     if (this.server) { const s = this.server; await new Promise(r => { s.close(r); s.closeAllConnections && s.closeAllConnections(); }); }
     if (this.agent) this.agent.stop();

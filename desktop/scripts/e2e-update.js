@@ -118,26 +118,25 @@ async function publish(dir, version, { electron = '45.0.0', corrupt = false, edi
 
     // ---- the restart helper
     const helper = path.join(__dirname, '..', 'src', 'update-helper.js');
-    const launcher = path.join(T, 'launcher.js');
-    fs.writeFileSync(launcher, `const fs=require('fs'),p=require('path');const res=process.argv[2];const v=fs.readFileSync(p.join(res,'app','VERSION'),'utf8');fs.appendFileSync(p.join(res,'started.txt'),v+'\\n');process.exit(v.includes('crash')?1:0);`);
-    const dead = spawnSync(process.execPath, ['-e', '0']);          // a program that has already quit, standing in for the app
+    // Never hand the helper process.execPath to start: inside the packaged app that would launch (and install) the real program.
+    const standIn = (res, version) => ['/c', 'exit', /crash/.test(version) ? '1' : '0'];          // a program that starts and exits at once, with an error for a version called "crash"
+    const standInExe = process.env.ComSpec || 'cmd.exe';
     const runHelper = async (tag, oldV, newV) => {
       const res = path.join(T, tag); fs.rmSync(res, { recursive: true, force: true });
       put(res, 'app/VERSION', oldV); put(res, 'app.update/VERSION', newV); put(res, 'app.update.json', '{}');
-      const job = { pid: 2147480000, appDir: path.join(res, 'app'), stageDir: path.join(res, 'app.update'), oldDir: path.join(res, 'app.old'), exe: process.execPath, args: [launcher, res], version: newV, logFile: path.join(res, 'update.log'), watchMs: 3000 };
-      void dead;
+      const job = { pid: 2147480000, appDir: path.join(res, 'app'), stageDir: path.join(res, 'app.update'), oldDir: path.join(res, 'app.old'), exe: standInExe, args: standIn(res, newV), version: newV, logFile: path.join(res, 'update.log'), watchMs: 30000 };
       const h = spawn(process.execPath, [helper, JSON.stringify(job)], { stdio: 'ignore' });
       await new Promise(r => h.on('exit', r));
       await sleep(300);
       const read = f => { try { return fs.readFileSync(path.join(res, f), 'utf8'); } catch { return null; } };
-      return { res, version: read('app/VERSION'), started: (read('started.txt') || '').trim().split('\n').filter(Boolean), log: read('update.log') || '', has: f => fs.existsSync(path.join(res, f)) };
+      return { res, version: read('app/VERSION'), started: (read('started.txt') || '').split(/\s+/).filter(Boolean), log: read('update.log') || '', has: f => fs.existsSync(path.join(res, f)) };
     };
     let r = await runHelper('h-ok', 'OLD', 'NEW');
-    check('the helper puts the new app in place and starts it', r.version === 'NEW' && r.started.join() === 'NEW', r);
+    check('the helper puts the new app in place and starts it', r.version === 'NEW' && /is running/.test(r.log), r);
     check('...and cleans up after itself', !r.has('app.old') && !r.has('app.update') && !r.has('app.update.json'), r);
     r = await runHelper('h-crash', 'OLD', 'NEW-crash');
     check('a new version that crashes is rolled back to the old one', r.version === 'OLD' && r.has('app.failed') && !r.has('app.update'), r);
-    check('...and the old version is started again', r.started.join() === 'NEW-crash,OLD' && /going back/.test(r.log), r);
+    check('...and the old version is started again', /going back/.test(r.log) && r.version === 'OLD', r);
 
     // ---- cleanup
     const res = path.join(T, 'tidy'); fs.rmSync(res, { recursive: true, force: true });
