@@ -27,6 +27,8 @@
     <symbol id="i-pencil" viewBox="0 0 24 24"><path d="M4 20h4L19 9a2.8 2.8 0 0 0-4-4L4 16z"/><path d="m13.5 6.5 4 4"/></symbol>
     <symbol id="i-x" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18"/></symbol>
     <symbol id="i-copy" viewBox="0 0 24 24"><rect x="8" y="8" width="12" height="12" rx="2.5"/><path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2"/></symbol>
+    <symbol id="i-door" viewBox="0 0 24 24"><path d="M6 21V4.5A1.5 1.5 0 0 1 7.5 3h9A1.5 1.5 0 0 1 18 4.5V21M4 21h16"/><circle cx="14.5" cy="12.5" r=".8"/></symbol>
+    <symbol id="i-back" viewBox="0 0 24 24"><path d="M15 5l-7 7 7 7"/></symbol>
     <symbol id="i-open" viewBox="0 0 24 24"><path d="M14 4h6v6M20 4l-9 9"/><path d="M18 14v4a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4"/></symbol>
   </defs>
 </svg>
@@ -35,6 +37,7 @@
   <aside class="side">
     <div class="brand"><img src="/assets/logo-light.webp" alt="Artema"><span>Portal</span></div>
     <button class="nav active" data-view="files"><svg class="i"><use href="#i-files"/></svg>Files</button>
+    <button class="nav" data-view="orders"><svg class="i"><use href="#i-door"/></svg>Door orders</button>
     <button class="nav" data-view="activity"><svg class="i"><use href="#i-activity"/></svg>Activity</button>
     <button class="nav" data-view="computers"><svg class="i"><use href="#i-monitor"/></svg>Computers<span class="count" id="pc-count"></span></button>
     <div class="side-label">Quick access</div>
@@ -71,6 +74,11 @@
         <div id="list"></div>
       </section>
 
+      <section class="view" id="view-orders" hidden>
+        <div class="head"><div><div class="crumbs" id="orders-crumbs"></div><div class="sub" id="orders-sub"></div></div><div class="head-actions" id="orders-actions"></div></div>
+        <div id="orders"></div>
+      </section>
+
       <section class="view" id="view-activity" hidden>
         <div class="head"><div><div class="crumbs"><button>Activity</button></div><div class="sub">What's been happening across the shop</div></div></div>
         <div id="feed"></div>
@@ -89,6 +97,7 @@
 
 <nav class="tabs" id="tabs">
   <button class="active" data-view="files"><svg class="i"><use href="#i-files"/></svg>Files</button>
+  <button data-view="orders"><svg class="i"><use href="#i-door"/></svg>Orders</button>
   <button data-view="activity"><svg class="i"><use href="#i-activity"/></svg>Activity</button>
   <button data-view="computers"><svg class="i"><use href="#i-monitor"/></svg>Computers</button>
 </nav>

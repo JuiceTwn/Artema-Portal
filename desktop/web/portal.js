@@ -131,6 +131,7 @@
     $$('[data-view]').forEach(b => b.classList.toggle('active', b.dataset.view === v && !b.closest('.quick')));
     $$('.view').forEach(el => el.hidden = el.id !== 'view-' + v);
     if (v !== 'files') closeDetail();
+    if (v !== 'orders') S.order = null;
     refresh(true);
   }
   $$('[data-view]').forEach(b => b.onclick = () => { clearSearch(); setView(b.dataset.view); });
@@ -351,6 +352,70 @@
     $$('#feed .ev').forEach(r => r.onclick = () => { const e = items[+r.dataset.i]; if (e.action !== 'deleted') go(e.path.split('/').slice(0, -1).join('/')); });
   }
 
+  // ---------- door orders ----------
+  // The order forms in the shared "Door Orders" folder. The list shows only what the CNC department works from; opening a door
+  // shows the whole form as a sheet to scroll through.
+  const dash = v => (v ? esc(v) : '<span class="faint">—</span>');
+  function prepOf(o) {
+    const p = [o.deadbolt && `DB prep ${esc(o.deadbolt)}`, o.multipoint && `Multipoint ${esc(o.multipoint)}`].filter(Boolean);
+    return p.length ? p.join('<br>') : '<span class="faint">—</span>';
+  }
+  async function loadOrders(force) {
+    if (S.order) return;                                   // someone is reading a sheet: leave it alone
+    const { items } = await api('orders');
+    const snap = JSON.stringify(items);
+    if (!force && snap === S.ordersSnap) return;
+    S.ordersSnap = snap; S.orderItems = items;
+    renderOrders();
+  }
+  function renderOrders() {
+    const items = S.orderItems || [];
+    $('#orders-crumbs').innerHTML = '<button>Door orders</button>';
+    $('#orders-sub').textContent = items.length ? `${items.length} door${items.length === 1 ? '' : 's'} · CNC view: panel, hinges and lock prepping` : '';
+    $('#orders-actions').innerHTML = '';
+    if (!items.length) {
+      $('#orders').innerHTML = `<div class="empty"><div class="ring">${icon('door')}</div><h3>No door orders yet</h3><div>Put the Excel order forms in the <b>Door Orders</b> folder and they show up here.</div><button class="btn primary big" id="orders-open">${icon('folder')}Open the folder</button></div>`;
+      $('#orders-open').onclick = () => go('Door Orders');
+      return;
+    }
+    $('#orders').innerHTML = `<div class="otable"><div class="orow oth"><div>Door</div><div>Panel series</div><div>Type</div><div>Size (W × H)</div><div>Swing</div><div>Hinge side</div><div>Hinges</div><div>Prepping</div></div>${items.map((o, i) => o.error
+      ? `<div class="orow item" data-i="${i}"><div class="door">${dash(o.door || o.name)}</div><div class="bad" style="grid-column: span 7">${esc(o.error)}</div></div>`
+      : `<div class="orow item" data-i="${i}" tabindex="0">
+        <div class="door"><b>${dash(o.door)}</b><span class="muted sm">${esc(o.customer || '')}</span></div>
+        <div data-l="Panel series">${dash(o.series)}</div><div data-l="Type">${dash(o.type)}</div>
+        <div data-l="Size">${o.width || o.height ? `${esc(o.width || '?')} × ${esc(o.height || '?')}` : dash('')}</div>
+        <div data-l="Swing">${dash(o.swing)}</div><div data-l="Hinge side">${dash(o.hingeSide)}</div>
+        <div data-l="Hinges">${o.hingeQty || o.hingeFinish || o.hingeType ? `<b>${esc(o.hingeQty || '?')}</b> × ${[o.hingeFinish, o.hingeType].filter(Boolean).map(esc).join(' · ') || dash('')}` : dash('')}</div>
+        <div data-l="Prepping">${prepOf(o)}</div></div>`).join('')}</div>`;
+    $$('#orders .orow.item').forEach(r => {
+      const o = items[+r.dataset.i];
+      const open = () => openOrder(o);
+      r.onclick = open; r.onkeydown = e => { if (e.key === 'Enter') open(); };
+    });
+  }
+  async function openOrder(o, sheet) {
+    S.order = o;
+    $('#orders-crumbs').innerHTML = `<button id="oc-back">Door orders</button><span class="sep">/</span><button>${esc(o.door || o.name)}</button>`;
+    $('#oc-back').onclick = () => { S.order = null; loadOrders(true).catch(e => toast(e.message, true)); };
+    $('#orders-sub').textContent = [o.customer, o.tag].filter(Boolean).join(' · ');
+    $('#orders-actions').innerHTML = `<a class="btn" href="${fileUrl('Door Orders/' + o.rel)}" download>${icon('download')}Download</a>`;
+    $('#orders').innerHTML = '<div class="empty"><div>Opening…</div></div>';
+    try {
+      const d = await api(`orders/sheet?path=${q(o.rel)}&sheet=${q(sheet || '')}`);
+      if (S.order !== o) return;
+      const covered = new Set(), spans = new Map();
+      d.merges.forEach(m => { spans.set(m.r + ',' + m.c, m); for (let r = 0; r < m.rs; r++) for (let c = 0; c < m.cs; c++) if (r || c) covered.add((m.r + r) + ',' + (m.c + c)); });
+      const body = d.rows.map((row, r) => `<tr>${row.map((v, c) => {
+        const k = r + ',' + c; if (covered.has(k)) return '';
+        const m = spans.get(k);
+        return `<td${m && m.rs > 1 ? ` rowspan="${m.rs}"` : ''}${m && m.cs > 1 ? ` colspan="${m.cs}"` : ''}>${esc(v)}</td>`;
+      }).join('')}</tr>`).join('');
+      $('#orders').innerHTML = `<div class="stabs">${d.sheets.map(n => `<button class="${n === d.name ? 'on' : ''}" data-sheet="${esc(n)}">${esc(n)}</button>`).join('')}</div>
+        <div class="sheet-wrap"><table class="sheet">${body}</table></div>`;
+      $$('#orders [data-sheet]').forEach(b => b.onclick = () => openOrder(o, b.dataset.sheet));
+    } catch (e) { $('#orders').innerHTML = `<div class="empty"><h3>Couldn't open this form</h3><div>${esc(e.message)}</div></div>`; }
+  }
+
   // ---------- computers ----------
   // Mirrors roles.js: general < admin < dev, and nobody changes a computer, or hands out a role, above their own.
   const ROLES = [['general', 'General', 'Files and the shop floor'], ['admin', 'Admin', 'Also manages computers and the PIN'], ['dev', 'Dev', 'Full control, including this computer']];
@@ -475,6 +540,7 @@
     try {
       if (S.view === 'files') await loadFiles(force);
       else if (S.view === 'activity') await loadActivity();
+      else if (S.view === 'orders') await loadOrders(force);
       else await loadComputers();
       setConn(true);
     } catch { setConn(false); }
@@ -490,9 +556,10 @@
   (async () => {
     try { S.info = await api('info'); } catch { setConn(false); }
     await initWho();
-    try { await api('me'); S.info = await api('info'); } catch { setConn(false); }          // signs in first if this browser has to
+    let me = null;
+    try { me = await api('me'); S.info = await api('info'); } catch { setConn(false); }          // signs in first if this browser has to
     api('devices').then(d => $('#pc-count').textContent = d.devices.length).catch(() => { });
     loadQuick();
-    refresh(true);
+    if (me && /^cnc$/i.test(me.tag || '')) setView('orders'); else refresh(true);          // the CNC computers open on their door orders
   })();
 })();

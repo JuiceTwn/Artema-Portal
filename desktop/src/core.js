@@ -15,6 +15,7 @@ const { Store } = require('./store');
 const { RoleStore } = require('./roles');
 const { UpdateSource, UpdateClient } = require('./update');
 const { ServerUpdater } = require('./selfupdate');
+const { Orders } = require('./orders');
 const { compare, valid } = require('./version');
 const { createPortalServer } = require('./server');
 const { Agent } = require('./agent');
@@ -154,7 +155,7 @@ class Core {
         this.roles = new RoleStore(path.join(this.dataDir, 'portal.db'));
         this.startSelfUpdater();
         this.server = createPortalServer(this.store, port, this.webDir, {
-          appVersion: this.app.version || '', roles: this.roles, serverUpdate: this.serverUpdateApi(), update: this.app.updateDir ? new UpdateSource(this.app.updateDir) : null, reveal: this.hooks.reveal, tls: this.tls, getPin: () => this.getPin(), rotatePin: () => this.rotatePin(), trustLoopback: () => this.trustLoopback,
+          appVersion: this.app.version || '', roles: this.roles, orders: new Orders(this.cfg.folder, new Proxy({}, { get: (_, k) => require('xlsx')[k] })), serverUpdate: this.serverUpdateApi(), update: this.app.updateDir ? new UpdateSource(this.app.updateDir) : null, reveal: this.hooks.reveal, tls: this.tls, getPin: () => this.getPin(), rotatePin: () => this.rotatePin(), trustLoopback: () => this.trustLoopback,
         });
         await new Promise((resolve, reject) => {
           this.server.once('error', reject);

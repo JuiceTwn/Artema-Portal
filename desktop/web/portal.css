@@ -177,7 +177,7 @@ dialog .btns { display: flex; justify-content: flex-end; gap: 10px; margin-top: 
   .detail { width: 100vw; top: auto; height: 82vh; border-radius: 26px 26px 0 0; transform: translateY(100%); }
   .app.has-detail .detail { transform: none; }
   .detail-in { width: 100%; }
-  .tabs { display: grid; grid-template-columns: repeat(3, 1fr); position: fixed; left: 0; right: 0; bottom: 0; z-index: 20; padding: 8px 8px calc(8px + env(safe-area-inset-bottom)); background: rgba(10, 11, 15, .86); backdrop-filter: blur(20px); border-top: 1px solid var(--line); }
+  .tabs { display: grid; grid-template-columns: repeat(4, 1fr); position: fixed; left: 0; right: 0; bottom: 0; z-index: 20; padding: 8px 8px calc(8px + env(safe-area-inset-bottom)); background: rgba(10, 11, 15, .86); backdrop-filter: blur(20px); border-top: 1px solid var(--line); }
   .tabs button { background: none; border: 0; display: flex; flex-direction: column; align-items: center; gap: 4px; font-size: 11px; font-weight: 600; color: var(--muted); padding: 6px; }
   .tabs button.active { color: var(--amber); }
   .tray { left: 16px; right: 16px; width: auto; bottom: 86px; }
@@ -284,3 +284,28 @@ dialog .btns { display: flex; justify-content: flex-end; gap: 10px; margin-top: 
 .upd .notes { white-space: pre-wrap; margin-bottom: 12px; max-height: 120px; overflow: auto; }
 .upd-btns { display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 12px; }
 .upd-btns .btn { height: 36px; padding: 0 16px; }
+
+/* ---------- door orders ---------- */
+.faint { color: var(--faint); }
+.otable { display: flex; flex-direction: column; border: 1px solid var(--line); border-radius: 20px; background: rgba(251, 238, 223, .03); overflow: hidden; }
+.orow { display: grid; grid-template-columns: minmax(0, 1.2fr) minmax(0, 1.2fr) 64px 104px 78px 62px minmax(0, 1.4fr) minmax(0, 1.6fr); gap: 12px; align-items: center; padding: 14px 18px; border-top: 1px solid var(--line); }
+.orow:first-child { border-top: 0; }
+.orow.oth { font-size: 11px; letter-spacing: .12em; text-transform: uppercase; font-weight: 700; color: var(--muted); padding-block: 12px; }
+.orow.item { cursor: pointer; transition: background .15s; }
+.orow.item:hover, .orow.item:focus-visible { background: rgba(251, 238, 223, .06); outline: none; }
+.orow .door { display: flex; flex-direction: column; min-width: 0; }
+.orow .door b { font-size: 16px; }
+.orow .bad { color: #ffb0ab; }
+.stabs { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 14px; }
+.stabs button { height: 34px; padding: 0 16px; border-radius: 999px; border: 1px solid var(--line-strong); background: none; font-weight: 600; font-size: 13px; color: var(--muted); }
+.stabs button.on { background: var(--amber); border-color: transparent; color: #1a1106; }
+.sheet-wrap { overflow: auto; max-height: calc(100vh - 250px); border: 1px solid var(--line); border-radius: 16px; background: #f4efe7; }
+.sheet { border-collapse: collapse; font-size: 13px; color: #1a1d24; width: 100%; }
+.sheet td { border: 1px solid #d8d0c3; padding: 4px 9px; vertical-align: middle; height: 26px; overflow-wrap: anywhere; }
+.sheet td:empty { background: #faf7f2; }
+@media (max-width: 1180px) {
+  .orow.oth { display: none; }
+  .orow { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px 14px; }
+  .orow .door { grid-column: 1 / -1; }
+  .orow > [data-l]::before { content: attr(data-l); display: block; font-size: 10px; letter-spacing: .12em; text-transform: uppercase; font-weight: 700; color: var(--faint); }
+}

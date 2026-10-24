@@ -1,14 +1,14 @@
 {
   "name": "artema-portal",
   "productName": "Artema Portal",
-  "version": "1.0.2",
+  "version": "1.0.3",
   "description": "Send and receive shop files between the offices and the CNC machines.",
   "author": "Artema Door",
   "main": "main.js",
   "private": true,
   "scripts": {
     "start": "electron .",
-    "test": "node scripts/e2e.js && node scripts/e2e-cert.js && node scripts/e2e-edition.js && node scripts/e2e-roles.js && node scripts/e2e-update.js && node scripts/e2e-selfupdate.js",
+    "test": "node scripts/e2e.js && node scripts/e2e-cert.js && node scripts/e2e-edition.js && node scripts/e2e-roles.js && node scripts/e2e-update.js && node scripts/e2e-selfupdate.js && node scripts/e2e-orders.js",
     "dist": "node scripts/dist.js all",
     "dist:server": "node scripts/dist.js server",
     "dist:client": "node scripts/dist.js client",
@@ -47,6 +47,7 @@
     "electron-builder": "^26.15.3"
   },
   "dependencies": {
-    "selfsigned": "^5.5.0"
+    "selfsigned": "^5.5.0",
+    "xlsx": "^0.18.5"
   }
 }

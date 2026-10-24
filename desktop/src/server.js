@@ -89,7 +89,11 @@ function createPortalServer(store, port, webDir, hooks = {}) {
       const need = action => { if (!can(auth.role, action)) throw new HttpError(403, "This computer's role doesn't allow that"); };
 
       if (req.method === 'GET') {
-        if (ep === 'me') return sendJson(res, { kind: auth.kind, name: auth.name, role: auth.role });
+        if (ep === 'me') return sendJson(res, { kind: auth.kind, name: auth.name, role: auth.role, tag: (auth.id && store.devices[auth.id] && store.devices[auth.id].tag) || '' });
+        if (ep === 'orders' || ep === 'orders/sheet') {
+          if (!hooks.orders) throw new HttpError(404, 'Not found');
+          return sendJson(res, ep === 'orders' ? { items: hooks.orders.list() } : hooks.orders.sheet(String(q.path || ''), String(q.sheet || '')));
+        }
         if (ep === 'list') return sendJson(res, { path: store.safe(q.path).rel, items: store.list(q.path) });
         if (ep === 'tree') return sendJson(res, { items: store.tree() });
         if (ep === 'search') return sendJson(res, { items: store.search(q.q) });
