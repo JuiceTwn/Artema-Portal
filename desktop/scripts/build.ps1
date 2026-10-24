@@ -6,7 +6,7 @@ $work = Join-Path $env:LOCALAPPDATA 'ab'
 New-Item -ItemType Directory $work -Force | Out-Null
 robocopy $src $work /MIR /XD dist node_modules /NFL /NDL /NJH /NJS /NP | Out-Null
 Set-Location $work
-if (-not (Test-Path node_modules\electron)) { npm install --no-audit --no-fund }
+npm install --no-audit --no-fund          # always: a new dependency in package.json must reach the build
 $env:CSC_IDENTITY_AUTO_DISCOVERY = 'false'
 npm run dist
 if ($LASTEXITCODE -ne 0) { throw 'build failed' }
