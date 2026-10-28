@@ -70,10 +70,11 @@ Frame Prep (cut, CNC, fill), Paint (paint prep, paint), Assembly, Shipping, Offi
 - Server build and client build from one codebase; join with a PIN over HTTPS; sync with trash and conflict copies.
 - Per-computer access levels (`general`, `admin`, `dev`) in SQLite, with an API to assign them.
 - Door orders read from the Excel forms, previewed, and laid out as a one-page work order per department (screen and PDF).
+- **Job foundation (no screens or API yet):** `desktop/src/workflow.js` defines the flow and `desktop/src/jobs.js` keeps doors in SQLite (`jobs.db`): components and their sources, the parts-in checks and release, steps completed once per door with lead-hand QC, detours for repairs that never move or double count a door, projects ("5 of 13"), rework counts and an event log. Backups run on start and every 6 hours (`backup_dir` in the settings moves them to another disk); a damaged database is restored from the newest good backup and never silently replaced by an empty one. Tested by `npm test` (`scripts/e2e-jobs.js`).
 
 ## Next steps, in order
 
-1. **Foundation.** A SQLite job model on the server: doors, components and sources, projects, stage completions, detours, and an event log. Retire `meta.json` / `activity.json` as stores. Attribution by department (and the optional name tap). Scheduled backups with a tested restore.
+1. **Foundation (model, event log, backups: done).** Still to do: retire `meta.json` / `activity.json` as stores, back up the shared files as well as the database, and test a restore on the real server.
 2. **Intake and stages.** Excel form → door (with project grouping) → release → department queues and an office board. The first thing the shop can switch to; run it beside Monday for a pilot before switching.
 3. **Job files.** A folder per door or project, file versions and restore, previews, and a "release to CNC" action that records what was sent.
 4. **Live updates and notifications.** Boards update without reloading; a department is told when work arrives.
