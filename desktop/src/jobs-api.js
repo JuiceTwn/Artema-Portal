@@ -72,6 +72,7 @@ function post(jobs, orders, ep, b, need = () => { }) {
       if (!number) throw new HttpError(400, 'A door needs a number');
       if (jobs.numbers().includes(number.toLowerCase())) throw new HttpError(409, `Door ${number} is already in the shop`);
       const input = doorFromOrder({ door: number, path: '', f: { customer: str(b.customer), project: str(b.project), ship: str(b.shipDate) } }, b.choices || {});
+      if (b.needs && typeof b.needs === 'object') input.needs = b.needs;
       return withDoor(addDoor(jobs, input, guided, dept, who));
     }
     if (ep === 'jobs/add-all') {
@@ -102,6 +103,7 @@ function post(jobs, orders, ep, b, need = () => { }) {
       if (ep === 'jobs/rules/save') { jobs.saveRules(b.rules, dept, who); return { ok: true }; }
       if (ep === 'jobs/settings') { if (typeof b.guided === 'boolean') jobs.setGuided(b.guided, dept, who); return { ok: true, ...jobs.settings() }; }
     }
+    if (ep === 'jobs/needs') { jobs.setNeeds(str(b.id), b.needs || {}, dept, who); return withDoor(str(b.id)); }
     if (ep === 'jobs/note') { jobs.setNote(str(b.id), str(b.note), dept, who); return withDoor(str(b.id)); }
     if (ep === 'jobs/check') { jobs.setCheck(str(b.id), str(b.item), b.done !== false, dept, who); return withDoor(str(b.id)); }
     if (ep === 'jobs/ready') { jobs.setComponentReady(str(b.id), str(b.kind), b.ready !== false, dept, who); return withDoor(str(b.id)); }

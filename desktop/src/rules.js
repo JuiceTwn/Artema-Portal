@@ -31,7 +31,11 @@ function install(JobStore, { text, bad, now }) {
       return list.map(c => {
         if (!c || fields.get(Number(c.field)) !== 'status') throw bad(`${who}: a condition needs a status column`);
         const test = c.test === 'finished' ? 'finished' : 'label';
-        if (test === 'finished') return { field: Number(c.field), test, not: !!c.not };
+        if (test === 'finished') {          // `with`: more columns that must all be finished (so "not finished" means any of them is still open)
+          const more = [...new Set((Array.isArray(c.with) ? c.with : []).map(Number))].filter(x => x !== Number(c.field));
+          if (!more.every(x => fields.get(x) === 'status')) throw bad(`${who}: a condition needs a status column`);
+          return { field: Number(c.field), ...(more.length ? { with: more } : {}), test, not: !!c.not };
+        }
         if (labels.get(Number(c.label)) !== Number(c.field)) throw bad(`${who}: a condition points at a label that does not exist`);
         return { field: Number(c.field), test, label: Number(c.label), not: !!c.not };
       });
@@ -39,8 +43,28 @@ function install(JobStore, { text, bad, now }) {
     /** Does a door's status meet a condition? `cur` is [{ field_id, label_id }] and `done` the ids of labels that count as done. */
     holdsCond(c, cur, done) {
       const at = cur.find(x => x.field_id === c.field), id = at ? at.label_id : null;
-      const yes = c.test === 'finished' ? id !== null && done.has(id) : id === c.label;
+      const fin = f => { const x = cur.find(y => y.field_id === f); return !!x && x.label_id !== null && done.has(x.label_id); };
+      const yes = c.test === 'finished' ? [c.field, ...(c.with || [])].every(fin) : id === c.label;
       return yes !== !!c.not;
+    },
+
+    /**
+     * A column or labels were deleted: tabs and rules that pointed at them must not be left pointing at nothing. A tab loses that condition
+     * (it then shows more doors, never fewer); a rule that depended on it is switched off so it cannot do the wrong thing, and says so.
+     */
+    forgetRefs(db, { field, labels = [] }) {
+      const gone = c => c.field === field || (c.with || []).includes(field) || (c.test === 'label' && labels.includes(c.label));
+      const strip = c => (c.with && c.with.includes(field) ? { ...c, with: c.with.filter(x => x !== field) } : c);
+      for (const v of db.prepare('SELECT id, filter FROM views').all()) {
+        const f = JSON.parse(v.filter || '[]');
+        if (f.some(c => gone(c) || (c.with || []).includes(field))) db.prepare('UPDATE views SET filter = ? WHERE id = ?').run(JSON.stringify(f.filter(c => c.field !== field && !(c.test === 'label' && labels.includes(c.label))).map(strip)), v.id);
+      }
+      for (const r of db.prepare('SELECT id, rule, enabled FROM rules').all()) {
+        const x = JSON.parse(r.rule);
+        const hits = (x.when.kind === 'cell' && (x.when.field === field || (x.when.label !== null && labels.includes(x.when.label)))) || x.if.some(gone)
+          || x.then.some(a => (a.do === 'set' || a.do === 'next') && (a.field === field || (a.do === 'set' && labels.includes(a.label))));
+        if (hits) db.prepare('UPDATE rules SET enabled = 0 WHERE id = ?').run(r.id);
+      }
     },
 
     /** The record that follows one change through the rules. */

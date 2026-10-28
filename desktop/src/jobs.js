@@ -25,7 +25,7 @@ const { STEPS, STEP_KEYS, stepOf, COMPONENT_KINDS, NEEDED_BEFORE, DEFAULT_CHECKS
 const ACTORS = [...FLOW_DEPARTMENTS, 'Skins', 'Panel Assembly', 'Rail & Stile', 'Office'];
 const SOURCE_KINDS = ['internal', 'external'];
 
-const SCHEMA_VERSION = 4;
+const SCHEMA_VERSION = 5;
 const MIGRATIONS = {
   1: `
     CREATE TABLE projects (
@@ -162,6 +162,15 @@ const MIGRATIONS = {
     UPDATE views SET filter = json_array(json_object('field', (SELECT field_id FROM labels WHERE id = views.station), 'test', 'label', 'label', station, 'not', json('false')))
       WHERE station IS NOT NULL AND EXISTS (SELECT 1 FROM labels WHERE id = views.station);
   `,
+  // which parts each door needs (needs.js); a door with no row needs everything
+  5: `
+    CREATE TABLE door_needs (
+      door_id INTEGER NOT NULL REFERENCES doors(id) ON DELETE CASCADE,
+      key     TEXT    NOT NULL,
+      needed  INTEGER NOT NULL,
+      PRIMARY KEY (door_id, key)
+    ) WITHOUT ROWID;
+  `,
 };
 
 const now = () => Math.floor(Date.now() / 1000);
@@ -276,6 +285,7 @@ class JobStore {
       for (const c of comps) db.prepare('INSERT INTO components (door_id, kind, source_kind, source, expected_at) VALUES (?, ?, ?, ?, ?)').run(id, c.kind, c.sourceKind, c.source, c.expectedAt);
       for (const item of checks) db.prepare('INSERT INTO checks (door_id, item) VALUES (?, ?)').run(id, item);
       this.event(db, id, 'door.created', 'Office', by, { number, project: pn });
+      this.applyNeeds(db, id, input.needs);
       this.runRules(db, id, { kind: 'added' }, this.ruleContext());
       return id;
     });
@@ -314,7 +324,7 @@ class JobStore {
     }
     return {
       id, number: d.number, project: d.project || '', projectTotal, projectIndex, notReady: components.filter(c => c.ready_at === null).map(c => c.kind), customer: d.customer, sourcePath: d.source_path, shipDate: d.ship_date,
-      createdAt: d.created_at, notes: d.notes, archived: d.archived_at !== null, cells: this.cellsOf(id), commentCount: this.commentCount(id), releasedAt: d.released_at, releasedBy: d.released_by, status,
+      createdAt: d.created_at, notes: d.notes, archived: d.archived_at !== null, needs: this.needsOf(id), cells: this.cellsOf(id), commentCount: this.commentCount(id), releasedAt: d.released_at, releasedBy: d.released_by, status,
       next: next ? { key: next.key, dept: next.dept, label: next.label, qc: next.qc } : null,
       waitingOn: waiting, checks, components, completions, detours, openDetours: open,
     };
@@ -553,5 +563,6 @@ class JobStore {
 require('./columns').install(JobStore, { actor, text, bad, now });
 require('./rules').install(JobStore, { actor, text, bad, now });
 require('./template').install(JobStore, { actor, bad });
+require('./needs').install(JobStore, { actor, bad });
 
 module.exports = { JobStore, ACTORS, STEPS };

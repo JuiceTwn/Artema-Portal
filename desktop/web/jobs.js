@@ -367,6 +367,7 @@
     }).join('');
     const fieldsSec = fieldRows ? `<div class="dr-sec"><h3>Status</h3>${fieldRows}</div>` : '';
 
+    const needsSec = d.needs && data.needs ? `<div class="dr-sec"><h3>This door needs</h3><div class="needs">${data.needs.tracks.map(t => `<button class="need${d.needs[t.key] ? ' on' : ''}" data-need="${t.key}" aria-pressed="${!!d.needs[t.key]}">${icon(d.needs[t.key] ? 'check' : 'x')}${esc(t.name)}</button>`).join('')}</div><div class="dr-note">Switch off what is not being made, for example a replacement that is only a panel. Those steps are skipped.</div></div>` : '';
     const notes = `<div class="dr-sec"><h3>Notes</h3><textarea id="dr-note" class="field" rows="2" maxlength="500" placeholder="Anything the next person should know">${esc(d.notes || '')}</textarea></div>`;
     const comments = `<div class="dr-sec" id="dr-comments"><h3>Updates${data.comments.length ? ` (${data.comments.length})` : ''}</h3>
       ${data.comments.map(c => `<div class="cm"><div class="cm-h"><b>${esc(c.dept)}</b>${c.who ? ' · ' + esc(c.who) : ''}<i>${esc(ago(c.at))}</i></div><div class="cm-b">${esc(c.body)}</div></div>`).join('')}
@@ -378,7 +379,7 @@
     $('#detail-in').innerHTML = `<button class="close" id="d-close" aria-label="Close">${icon('x')}</button>
       <div class="dr-head"><span class="doorpill big">${esc(d.number)}</span><div><h2>${esc(d.customer || 'No customer')}</h2><div class="muted sm">${esc(projectLine(d))}${d.archived ? ' · Archived' : ''}</div></div></div>
       <div class="dr-due ${dueI.cls}">${esc(dueI.text)}</div>
-      ${fieldsSec}${comments}${notes}${flow}${actions}${history}`;
+      ${needsSec}${fieldsSec}${comments}${notes}${flow}${actions}${history}`;
     $('#app').classList.add('has-detail');
     const root = $('#detail-in');
     $('#d-close').onclick = () => { S.drawer = null; closeDetail(); };
@@ -388,6 +389,7 @@
     $$('[data-unready]', root).forEach(b => b.onclick = () => act(b, () => post('ready', { id: d.id, kind: b.dataset.unready, ready: false })));
     $$('[data-repair-done]', root).forEach(b => b.onclick = () => repairDone(b.dataset.repairDone, d.number, b));
     $$('[data-edit-field]', root).forEach(b => b.onclick = () => { const f = data.fields.find(x => String(x.id) === b.dataset.editField); window.Portal.jobs.kit.editCell(b, d, f, data); });
+    $$('.needs [data-need]').forEach(b => b.onclick = () => act(b, () => post('needs', { id: d.id, needs: { ...d.needs, [b.dataset.need]: !d.needs[b.dataset.need] } })));
     $('#dr-note').onblur = e => { const v = e.target.value.trim(); if (v !== (d.notes || '')) act(null, () => post('note', { id: d.id, note: v })); };
     $('#dr-post').onclick = () => { const t = $('#dr-comment').value.trim(); if (t) act($('#dr-post'), async () => { await post('comment', { id: d.id, text: t }); S.drawerScroll = 'comments'; }); else toast('Write something first', true); };
     $('#dr-arch').onclick = () => act($('#dr-arch'), async () => { await post('archive', { id: d.id, on: !d.archived }); toast(d.archived ? `${d.number} is back on the board` : `${d.number} archived`); S.drawer = null; closeDetail(); });

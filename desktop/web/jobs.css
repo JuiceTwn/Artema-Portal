@@ -406,3 +406,13 @@ textarea.field:focus { border-color: var(--amber); }
 .rl-say { font-size: 13px; color: var(--muted); border-top: 1px dashed var(--line); padding-top: 8px; }
 .rl-help { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; padding: 10px 12px; border-radius: 12px; background: rgba(204, 125, 20, .12); margin-bottom: 12px; font-size: 14px; }
 .empty-note { color: var(--muted); padding: 10px 0; }
+
+/* ---------- what a door needs ---------- */
+.needs { display: flex; gap: 8px; flex-wrap: wrap; }
+.need { min-height: 44px; padding: 0 16px; border-radius: 999px; border: 1px solid var(--line-strong); background: transparent; color: var(--muted); font-weight: 700; display: inline-flex; align-items: center; gap: 8px; cursor: pointer; }
+.need.on { background: rgba(95, 208, 139, .16); border-color: var(--ok); color: var(--text); }
+.nd-needs { display: flex; gap: 16px; flex-wrap: wrap; }
+.chip { display: inline-flex; align-items: center; gap: 4px; padding: 4px 4px 4px 12px; border-radius: 999px; background: rgba(251, 238, 223, .09); font-size: 14px; font-weight: 600; }
+.chip button { border: 0; background: transparent; color: var(--muted); width: 26px; height: 26px; cursor: pointer; display: grid; place-items: center; }
+.cz-view .rl-s select { max-width: 190px; min-width: 0; }
+.cz-view .rl-s { flex-wrap: wrap; gap: 6px; }

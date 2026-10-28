@@ -5,31 +5,47 @@
  * Every step is a status column ("Done" counts as done). A tab shows a door once the steps before it are finished and its own is not,
  * so a door turns up on the next station's tab by itself, and a step that needs several earlier ones (Verification) waits for all of them.
  *
- *   Material Cutting ─┬─ CNC Frame ───────── Frame Filling ──────────────┐
- *                     ├─ CNC Panel ──────────────────────────────────────┼─ Verification ─ Paint Prep ─ Paint ─ Assembly ─ Wrapping & QC ─ Shipping
- *                     └─ CNC Rail & Stile ─ Rail & Stile Filling & Assembly ┘
+ *   Material Cutting ─┬─ CNC Frame ───────────── Frame Filling ──────────────────┐
+ *                     └─ CNC Rail & Stile ─ Rail & Stile Filling & Assembly ──────┤
+ *   Panel Received ───── CNC Panel ──────────────────────────────────────────────┴─ Verification ─ Paint Prep ─ Paint ─ Assembly ─ Wrapping, QC ─ Shipping
+ *
+ * Doors differ: a replacement may be only a frame, only a panel, or only a rail & stile panel. So each door says which of the three it
+ * needs (needs.js): the others are set to "Not needed", which counts as finished, so nothing waits on a part that is not coming.
+ * Material Cutting is only for frames and rail & stile (panels come from providers), so it is not needed when neither is.
  *
  * Applying it twice changes nothing that already exists (columns, tabs and rules are matched by name).
  */
-const DEFAULT_LABELS = [['Working on it', 'orange'], ['Done', 'green', 'done'], ['Stuck', 'red', 'attn']];
-const RS_LABELS = [['Needed', 'blue'], ['Working on it', 'orange'], ['Done', 'green', 'done'], ['Not needed', 'grey', 'done'], ['Stuck', 'red', 'attn']];
+const NOT_NEEDED = 'Not needed';
+const PLAIN = [['Working on it', 'orange'], ['Done', 'green', 'done'], ['Stuck', 'red', 'attn']];
+const OPTIONAL = [['Working on it', 'orange'], ['Done', 'green', 'done'], [NOT_NEEDED, 'grey', 'done'], ['Stuck', 'red', 'attn']];
+const RECEIVING = [['Ordered', 'orange'], ['Received', 'green', 'done'], [NOT_NEEDED, 'grey', 'done'], ['Stuck', 'red', 'attn']];
 
 /** name, steps that must be finished first, columns shown from the order form, labels. */
 const STEPS = [
-  { name: 'Material Cutting', after: [], form: ['size'] },
-  { name: 'CNC Frame', after: ['Material Cutting'], form: ['size', 'frame', 'jamb'] },
-  { name: 'CNC Panel', after: ['Material Cutting'], form: ['series', 'ptype', 'size'] },
-  { name: 'CNC Rail & Stile', after: ['Material Cutting'], form: ['size'], labels: RS_LABELS },
-  { name: 'Frame Filling', after: ['CNC Frame'], form: ['frame', 'jamb'] },
-  { name: 'Rail & Stile Filling & Assembly', after: ['CNC Rail & Stile'], form: ['size'], labels: RS_LABELS },
+  { name: 'Material Cutting', after: [], form: ['size'], labels: OPTIONAL },
+  { name: 'CNC Frame', after: ['Material Cutting'], form: ['size', 'frame', 'jamb'], labels: OPTIONAL },
+  { name: 'Frame Filling', after: ['CNC Frame'], form: ['frame', 'jamb'], labels: OPTIONAL },
+  { name: 'CNC Rail & Stile', after: ['Material Cutting'], form: ['size'], labels: OPTIONAL },
+  { name: 'Rail & Stile Filling & Assembly', after: ['CNC Rail & Stile'], form: ['size'], labels: OPTIONAL, tab: 'Rail & Stile (Cliff)' },
+  { name: 'Panel Received', after: [], form: ['series', 'ptype', 'size'], labels: RECEIVING, tab: 'Panels coming in' },
+  { name: 'CNC Panel', after: ['Panel Received'], form: ['series', 'ptype', 'size'], labels: OPTIONAL },
   { name: 'Verification', after: ['Frame Filling', 'CNC Panel', 'Rail & Stile Filling & Assembly'], form: ['size', 'series', 'frame'] },
   { name: 'Paint Prep', after: ['Verification'], form: ['extFinish', 'intFinish', 'frameOut', 'frameIn'] },
   { name: 'Paint', after: ['Paint Prep'], form: ['extFinish', 'intFinish', 'frameOut', 'frameIn'] },
   { name: 'Assembly', after: ['Paint'], form: ['glass', 'handle', 'hardware'] },
-  { name: 'Wrapping & QC', after: ['Assembly'], form: ['size'] },
-  { name: 'Shipping', after: ['Wrapping & QC'], form: ['po', 'orderNo'] },
+  // one station, two separate steps: the tab shows a door until both are done
+  { name: 'Wrapping', after: ['Assembly'], form: ['size'], tab: 'Wrapping & QC', also: ['QC'] },
+  { name: 'QC', after: ['Assembly'], form: [], tab: null },
+  { name: 'Shipping', after: ['Wrapping', 'QC'], form: ['po', 'orderNo'] },
 ];
-const TAB_NAME = { 'Rail & Stile Filling & Assembly': 'Rail & Stile (Cliff)' };
+/** Which columns belong to which part of a door, and whether that part goes through cutting. */
+const TRACKS = [
+  { key: 'frame', name: 'Frame', cuts: true, fields: ['CNC Frame', 'Frame Filling'] },
+  { name: 'Panel', key: 'panel', cuts: false, fields: ['Panel Received', 'CNC Panel'] },
+  { name: 'Rail & stile panel', key: 'rs', cuts: true, fields: ['CNC Rail & Stile', 'Rail & Stile Filling & Assembly'] },
+];
+const CUTTING = ['Material Cutting'];
+const OBSOLETE_RULE = 'New doors: no rail & stile unless the office says so';          // from the first version of this starter
 
 function install(JobStore, { actor, bad }) {
   Object.assign(JobStore.prototype, {
@@ -41,12 +57,22 @@ function install(JobStore, { actor, bad }) {
         const col = name => ids.get(name.toLowerCase());
         for (const s of STEPS) {
           if (col(s.name)) continue;
-          ids.set(s.name.toLowerCase(), this.insertField(db, s.name, 'status', s.labels || DEFAULT_LABELS));
+          ids.set(s.name.toLowerCase(), this.insertField(db, s.name, 'status', s.labels || PLAIN));
           made.columns.push(s.name);
         }
+        // a column that was already there (CNC Frame, say) gets a "Not needed" label if the door can skip that part
+        const optional = new Set([...TRACKS.flatMap(t => t.fields), ...CUTTING].map(n => n.toLowerCase()));
+        for (const s of STEPS) {
+          const fid = col(s.name);
+          if (!optional.has(s.name.toLowerCase())) continue;
+          if (!db.prepare('SELECT 1 FROM labels WHERE field_id = ? AND done = 1').get(fid)) throw bad(`“${s.name}” already exists but has no label that counts as done. Mark one in its labels, then try again.`);
+          if (!db.prepare('SELECT 1 FROM labels WHERE field_id = ? AND name = ? COLLATE NOCASE').get(fid, NOT_NEEDED)) {
+            const p = db.prepare('SELECT COALESCE(MAX(position), -1) + 1 AS p FROM labels WHERE field_id = ?').get(fid).p;
+            db.prepare('INSERT INTO labels (field_id, name, color, position, done, attn) VALUES (?, ?, ?, ?, 1, 0)').run(fid, NOT_NEEDED, 'grey', p);
+          }
+        }
+        for (const s of STEPS) if (!db.prepare('SELECT 1 FROM labels WHERE field_id = ? AND done = 1').get(col(s.name))) throw bad(`“${s.name}” already exists but has no label that counts as done. Mark one in its labels, then try again.`);
         const done = fid => (db.prepare('SELECT id FROM labels WHERE field_id = ? AND done = 1 ORDER BY position LIMIT 1').get(fid) || {}).id;
-        for (const s of STEPS) if (!done(col(s.name))) throw bad(`“${s.name}” already exists but has no label that counts as done. Mark one in its labels, then try again.`);
-        const labelId = (fid, name) => (db.prepare('SELECT id FROM labels WHERE field_id = ? AND name = ? COLLATE NOCASE').get(fid, name) || {}).id;
 
         const haveViews = new Set(db.prepare('SELECT name FROM views').all().map(v => v.name.toLowerCase()));
         let pos = db.prepare('SELECT COALESCE(MAX(position), -1) + 1 AS p FROM views').get().p;
@@ -57,9 +83,16 @@ function install(JobStore, { actor, bad }) {
         };
         addView('Where is everything', ['door', 'updates', 'ship', 'customer', 'at', 'notes'], []);
         for (const s of STEPS) {
-          const filter = [...s.after.map(a => ({ field: col(a), test: 'finished', not: false })), { field: col(s.name), test: 'finished', not: true }];
-          addView(TAB_NAME[s.name] || s.name, ['door', 'updates', 'files', 'ship', 'customer', '#' + col(s.name), ...s.form.map(f => 'f:' + f), 'notes'], filter);
+          if (s.tab === null) continue;          // shares the tab of the step before it
+          const group = [s.name, ...(s.also || [])];
+          const filter = [...s.after.map(a => ({ field: col(a), test: 'finished', not: false })),
+            group.length > 1 ? { field: col(group[0]), with: group.slice(1).map(col), test: 'finished', not: true } : { field: col(s.name), test: 'finished', not: true }];
+          addView(s.tab || s.name, ['door', 'updates', 'files', 'ship', 'customer', ...group.map(g => '#' + col(g)), ...s.form.map(f => 'f:' + f), 'notes'], filter);
         }
+
+        // which columns are the door's parts: what "this door needs" switches
+        db.prepare("INSERT INTO meta (key, value) VALUES ('needs', ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value")
+          .run(JSON.stringify({ cutting: CUTTING.map(col), tracks: TRACKS.map(t => ({ key: t.key, name: t.name, cuts: t.cuts, fields: t.fields.map(col) })) }));
 
         const haveRules = new Set(db.prepare('SELECT name FROM rules').all().map(r => r.name.toLowerCase()));
         let rpos = db.prepare('SELECT COALESCE(MAX(position), -1) + 1 AS p FROM rules').get().p;
@@ -68,9 +101,8 @@ function install(JobStore, { actor, bad }) {
           db.prepare('INSERT INTO rules (name, position, enabled, rule) VALUES (?, ?, 1, ?)').run(name, rpos++, JSON.stringify(rule));
           made.rules.push(name);
         };
-        const rs1 = col('CNC Rail & Stile'), rs2 = col('Rail & Stile Filling & Assembly'), ship = col('Shipping');
-        const skip = [[rs1, labelId(rs1, 'Not needed')], [rs2, labelId(rs2, 'Not needed')]].filter(x => x[1]).map(([field, label]) => ({ do: 'set', field, label }));          // a column of your own without that label is left alone
-        if (skip.length) addRule('New doors: no rail & stile unless the office says so', { when: { kind: 'added' }, if: [], then: skip });
+        db.prepare('DELETE FROM rules WHERE name = ? COLLATE NOCASE').run(OBSOLETE_RULE);
+        const ship = col('Shipping');
         addRule('Shipped: take the door off the board', { when: { kind: 'cell', field: ship, label: done(ship) }, if: [], then: [{ do: 'archive' }] });
 
         this.event(db, null, 'board.template', d, who, { template: 'door-shop', ...made });
@@ -80,4 +112,4 @@ function install(JobStore, { actor, bad }) {
   });
 }
 
-module.exports = { install, STEPS };
+module.exports = { install, STEPS, TRACKS, NOT_NEEDED };

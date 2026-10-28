@@ -108,31 +108,84 @@ try {
 
   // the door shop starter
   js.saveViews(js.views().map(v => ({ id: v.id, name: v.name, cols: v.cols, filter: [] })), 'Office', '');
+  js.saveRules([], 'Office', '');
+  check('before the starter a door has no needs and nothing is set', js.needsConfig() === null && js.door(js.createDoor({ number: '26-690', components: [], needs: { frame: false } }, 'Office')).needs === null);
   const t = js.applyDoorShopTemplate('Office', '');
   const f2 = js.fields(), by = n => f2.find(f => f.name === n);
-  check('the starter makes a column per step and reuses the ones that exist', t.columns.length === 10 && !t.columns.includes('CNC Frame') && by('Verification') && by('Paint').labels.some(l => l.done));
-  const tabs = js.views(), tab = n => tabs.find(v => v.name === n);
-  const ver = tab('Verification').filter;
-  check('Verification waits for frame filling, the panel and the rail & stile', ver.length === 4 && ver.slice(0, 3).every(c => c.test === 'finished' && !c.not) && ver[3].not === true && ver[3].field === by('Verification').id);
-  check('each station tab shows a door once the step before it is done', tab('Paint').filter.length === 2 && tab('Paint').filter[0].field === by('Paint Prep').id && tab('Where is everything').filter.length === 0);
+  check('the starter makes a column per step and reuses the ones that exist', t.columns.length === 12 && !t.columns.includes('CNC Frame') && by('Verification') && by('Wrapping') && by('QC') && by('Panel Received'), t.columns);
+  check('a column that was already there gets a "Not needed" label that counts as done', js.fields().find(f => f.name === 'CNC Panel').labels.some(l => l.name === 'Not needed' && l.done));
   const t2 = js.applyDoorShopTemplate('Office', '');
   check('applying it again changes nothing', !t2.columns.length && !t2.tabs.length && !t2.rules.length);
-  // walk one door through and check where it shows up
-  const done = n => by(n).labels.find(l => l.done).id;
-  const shown = id => { const cur = Object.entries(js.cellsOf(id)).map(([f, c]) => ({ field_id: +f, label_id: c.label })); const dn = new Set(js.fields().flatMap(f => f.labels.filter(l => l.done).map(l => l.id)));
-    return js.views().filter(v => v.filter.length && v.filter.every(c => js.holdsCond(c, cur, dn))).map(v => v.name); };
-  const d6 = js.createDoor({ number: '26-706', components: [] }, 'Office');
-  check('a new door starts at Material Cutting, with no rail & stile', shown(d6).join() === 'Material Cutting' && js.cellsOf(d6)[by('CNC Rail & Stile').id].label === by('CNC Rail & Stile').labels.find(l => l.name === 'Not needed').id);
-  js.setCell(d6, by('Material Cutting').id, done('Material Cutting'), 'Office', '');
-  check('then it is on the three CNC tabs at once', shown(d6).sort().join() === 'CNC Frame,CNC Panel');
-  js.setCell(d6, by('CNC Frame').id, done('CNC Frame'), 'Office', ''); js.setCell(d6, by('CNC Panel').id, done('CNC Panel'), 'Office', '');
-  check('the frame goes to Frame Filling; the finished panel waits', shown(d6).join() === 'Frame Filling');
-  js.setCell(d6, by('Frame Filling').id, done('Frame Filling'), 'Office', '');
-  check('with everything made, it is on Verification alone', shown(d6).join() === 'Verification', shown(d6));
-  for (const n of ['Verification', 'Paint Prep', 'Paint', 'Assembly', 'Wrapping & QC']) js.setCell(d6, by(n).id, done(n), 'Office', '');
-  check('then it goes through paint prep, paint, assembly and QC to Shipping', shown(d6).join() === 'Shipping');
-  js.setCell(d6, by('Shipping').id, done('Shipping'), 'Office', '');
-  check('shipped doors leave the board by themselves', js.door(d6).archived === true && shown(d6).length === 0);
+  const fl = () => js.fields(), F = n => fl().find(f => f.name === n);
+  const done = n => F(n).labels.find(l => l.done).id;
+  const shown = id => { const cur = Object.entries(js.cellsOf(id)).map(([f, c]) => ({ field_id: +f, label_id: c.label })); const dn = new Set(fl().flatMap(f => f.labels.filter(l => l.done).map(l => l.id)));
+    return js.views().filter(v => v.filter.length && v.filter.every(c => js.holdsCond(c, cur, dn))).map(v => v.name).sort().join(' | '); };
+  const tap = (id, ...names) => { for (const n of names) js.setCell(id, F(n).id, done(n), 'Office', ''); };
+  const door = (number, needs) => js.createDoor({ number, components: [], needs }, 'Office');
+
+  // a frame and a panel (the usual door)
+  const a1 = door('26-801', { frame: true, panel: true, rs: false });
+  check('frame + panel: cutting for the frame, and the panel is waited for from the provider', shown(a1) === 'Material Cutting | Panels coming in', shown(a1));
+  tap(a1, 'Material Cutting');
+  check('cutting does not hold up the panel, and the frame goes to CNC', shown(a1) === 'CNC Frame | Panels coming in');
+  tap(a1, 'Panel Received');
+  check('the panel is CNC\'d only once it has arrived', shown(a1) === 'CNC Frame | CNC Panel');
+  tap(a1, 'CNC Panel', 'CNC Frame');
+  check('the panel waits (on no tab) while the frame is filled', shown(a1) === 'Frame Filling', shown(a1));
+  tap(a1, 'Frame Filling');
+  check('with the parts that are needed finished, it is on Verification (no rail & stile held it up)', shown(a1) === 'Verification', shown(a1));
+
+  // a rail & stile door: the same door with all three
+  const a2 = door('26-802', { frame: true, panel: true, rs: true });
+  tap(a2, 'Material Cutting');
+  check('rail & stile adds its own CNC tab', shown(a2) === 'CNC Frame | CNC Rail & Stile | Panels coming in', shown(a2));
+  tap(a2, 'Panel Received', 'CNC Panel', 'CNC Frame', 'Frame Filling', 'CNC Rail & Stile');
+  check('it goes to Cliff\'s area to be filled and assembled, and Verification waits for it', shown(a2) === 'Rail & Stile (Cliff)', shown(a2));
+  tap(a2, 'Rail & Stile Filling & Assembly');
+  check('then all three come together at Verification', shown(a2) === 'Verification');
+
+  // replacements: only one part
+  const p1 = door('26-803', { frame: false, panel: true, rs: false });
+  check('a panel-only replacement skips cutting altogether', shown(p1) === 'Panels coming in', shown(p1));
+  tap(p1, 'Panel Received', 'CNC Panel');
+  check('…and goes straight to Verification once the panel is done', shown(p1) === 'Verification', shown(p1));
+  const f1 = door('26-804', { frame: true, panel: false, rs: false });
+  check('a frame-only replacement needs cutting but no panel', shown(f1) === 'Material Cutting', shown(f1));
+  tap(f1, 'Material Cutting', 'CNC Frame', 'Frame Filling');
+  check('…and goes to Verification when the frame is filled', shown(f1) === 'Verification', shown(f1));
+  const r1 = door('26-805', { frame: false, panel: false, rs: true });
+  tap(r1, 'Material Cutting', 'CNC Rail & Stile', 'Rail & Stile Filling & Assembly');
+  check('a rail & stile panel on its own goes cutting, CNC, Cliff, Verification', shown(r1) === 'Verification', shown(r1));
+  check('a door with nothing to make has nothing to wait for', shown(door('26-806', { frame: false, panel: false, rs: false })) === 'Verification');
+
+  // fixing what a door needs afterwards
+  const c1 = door('26-807', { frame: true, panel: true, rs: false });
+  js.setNeeds(c1, { frame: true, panel: true, rs: true }, 'Office', '');
+  check('the office can say later that a door needs rail & stile', js.door(c1).needs.rs === true && shown(c1) === 'Material Cutting | Panels coming in');
+  tap(c1, 'Material Cutting');
+  check('…and the work already done is kept when it does', shown(c1) === 'CNC Frame | CNC Rail & Stile | Panels coming in');
+  tap(c1, 'CNC Frame');
+  js.setNeeds(c1, { frame: false, panel: true, rs: true }, 'Office', '');
+  check('taking a part away sets it to Not needed', js.door(c1).needs.frame === false && !shown(c1).includes('Frame Filling'));
+  js.setNeeds(c1, { frame: true, panel: true, rs: true }, 'Office', '');
+  check('putting it back does not erase real progress', js.cellsOf(c1)[F('CNC Frame').id].label === done('CNC Frame') && js.door(c1).needs.frame === true);
+
+  // wrapping and QC: one station, two steps, either order
+  const w1 = door('26-808', { frame: true, panel: false, rs: false });
+  tap(w1, 'Material Cutting', 'CNC Frame', 'Frame Filling', 'Verification', 'Paint Prep', 'Paint', 'Assembly');
+  check('after assembly the door is on Wrapping & QC', shown(w1) === 'Wrapping & QC', shown(w1));
+  tap(w1, 'QC');
+  check('with QC done first it stays there until it is wrapped', shown(w1) === 'Wrapping & QC');
+  tap(w1, 'Wrapping');
+  check('then it goes to Shipping', shown(w1) === 'Shipping', shown(w1));
+  tap(w1, 'Shipping');
+  check('shipped doors leave the board by themselves', js.door(w1).archived === true && shown(w1) === '');
+
+  // deleting a column or label does not leave tabs and rules pointing at nothing
+  js.saveRules([{ name: 'Needs QC', when: { kind: 'cell', field: F('QC').id, label: done('QC') }, if: [], then: [{ do: 'comment', text: 'QC done' }] }], 'Office', '');
+  js.deleteField(F('QC').id, 'Office', '');
+  check('a tab loses a condition on a deleted column rather than keep pointing at it', js.views().every(v => v.filter.every(c => js.fields().some(f => f.id === c.field) && (c.with || []).every(x => js.fields().some(f => f.id === x)))));
+  check('a rule that watched a deleted column is switched off', js.rules().find(r => r.name === 'Needs QC').enabled === false);
   js.close();
 } catch (e) {
   console.log('FAIL unexpected error: ' + (e && e.stack || e));

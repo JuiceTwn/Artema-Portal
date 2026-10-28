@@ -31,7 +31,8 @@
   const condHolds = (c, d, cfg) => {
     const f = cfg.fields.find(x => x.id === c.field); if (!f) return true;
     const cell = d.cells[c.field], l = cell && cell.label != null ? f.labels.find(x => x.id === cell.label) : null;
-    return (c.test === 'finished' ? !!(l && l.done) : !!l && l.id === c.label) !== !!c.not;
+    const fin = fid => { const ff = cfg.fields.find(x => x.id === fid), cc = d.cells[fid], ll = ff && cc && cc.label != null ? ff.labels.find(x => x.id === cc.label) : null; return !!(ll && ll.done); };
+    return (c.test === 'finished' ? [c.field, ...(c.with || [])].every(fin) : !!l && l.id === c.label) !== !!c.not;
   };
   const atTab = (d, view, cfg) => (view.filter || []).every(c => condHolds(c, d, cfg));
   window.Portal.jobs.kit.atTab = atTab;
@@ -193,12 +194,13 @@
       html: `<div class="pk-label">Door number</div><input class="field" id="nd-num" placeholder="26-611" autocomplete="off" maxlength="40">
         <div class="pk-label">Customer</div><input class="field" id="nd-cust" autocomplete="off" maxlength="120">
         <div class="pk-label">Ship date</div><input type="date" class="field" id="nd-ship">
+        ${cfg.needs ? `<div class="pk-label">What does this door need?</div><div class="nd-needs">${cfg.needs.tracks.map(t => `<label class="pk-check"><input type="checkbox" data-need="${t.key}"${t.key === 'rs' ? '' : ' checked'}> ${esc(t.name)}</label>`).join('')}</div>` : ''}
         ${cfg.guided ? `<p class="pk-note">Guided steps are on, so say where the parts come from.</p>${row('frame', 'Frame', how)}${row('panel', 'Panel', how)}${row('rail_stile', 'Rail & stile', [...how, ['none', 'Not needed']])}` : ''}`,
       mount: el => { K.wireChoices(el); setTimeout(() => $('#nd-num', el).focus(), 50); },
       collect: el => {
         const number = $('#nd-num', el).value.trim();
         if (!number) { toast('Type the door number', true); return undefined; }
-        return { number, customer: $('#nd-cust', el).value.trim(), shipDate: $('#nd-ship', el).value, choices: cfg.guided ? { frame: K.chosen(el, 'frame'), panel: K.chosen(el, 'panel'), rail_stile: K.chosen(el, 'rail_stile') } : {} };
+        return { number, needs: cfg.needs ? Object.fromEntries($$('[data-need]', el).map(x => [x.dataset.need, x.checked])) : undefined, customer: $('#nd-cust', el).value.trim(), shipDate: $('#nd-ship', el).value, choices: cfg.guided ? { frame: K.chosen(el, 'frame'), panel: K.chosen(el, 'panel'), rail_stile: K.chosen(el, 'rail_stile') } : {} };
       },
     });
     if (!res) return;
@@ -258,7 +260,7 @@
     const f = id => (cfg.fields.find(x => x.id === id) || { name: '?', labels: [] });
     const l = (fid, id) => (f(fid).labels.find(x => x.id === id) || { name: '?' }).name;
     const when = r.when.kind === 'added' ? 'a door is added' : `${f(r.when.field).name} ${r.when.label === null ? 'changes' : 'becomes ' + l(r.when.field, r.when.label)}`;
-    const cond = r.if.length ? ', and ' + r.if.map(c => `${f(c.field).name} ${MODE[modeOf(c)]}${c.test === 'finished' ? '' : ' ' + l(c.field, c.label)}`).join(' and ') : '';
+    const cond = r.if.length ? ', and ' + r.if.map(c => (c.with && c.with.length ? `${[c.field, ...c.with].map(x => f(x).name).join(' and ')} ${c.not ? 'are not all finished' : 'are all finished'}` : `${f(c.field).name} ${MODE[modeOf(c)]}${c.test === 'finished' ? '' : ' ' + l(c.field, c.label)}`)).join(' and ') : '';
     const then = r.then.map(a => a.do === 'set' ? `set ${f(a.field).name} to ${a.label === null ? 'empty' : l(a.field, a.label)}` : a.do === 'next' ? `move ${f(a.field).name} on` : a.do === 'comment' ? 'add an update' : 'archive it').join(', ');
     return `When ${when}${cond}: ${then}.`;
   }
@@ -314,8 +316,8 @@
           else if (k === 'wk') { if (v === 'added') r.when = { kind: 'added' }; else { const f = status[0]; r.when = { kind: 'cell', field: f.id, label: null }; } }
           else if (k === 'wf') r.when = { kind: 'cell', field: +v, label: null };
           else if (k === 'wl') r.when.label = v === '' ? null : +v;
-          else if (k === 'cf') r.if[j] = fromMode(modeOf(r.if[j]), +v, firstLabel(+v));
-          else if (k === 'cn') r.if[j] = fromMode(v, r.if[j].field, r.if[j].label !== undefined ? r.if[j].label : firstLabel(r.if[j].field));
+          else if (k === 'cf') r.if[j] = fromMode(modeOf(r.if[j]), +v, firstLabel(+v), (r.if[j].with || []).filter(x => x !== +v));
+          else if (k === 'cn') r.if[j] = fromMode(v, r.if[j].field, r.if[j].label !== undefined ? r.if[j].label : firstLabel(r.if[j].field), r.if[j].with);
           else if (k === 'cl') r.if[j].label = +v;
           else if (k === 'do') { const f = status[0]; r.then[j] = v === 'set' ? { do: 'set', field: f.id, label: firstLabel(f.id) } : v === 'next' ? { do: 'next', field: f.id } : v === 'comment' ? { do: 'comment', text: '' } : { do: 'archive' }; }
           else if (k === 'af') r.then[j] = r.then[j].do === 'set' ? { do: 'set', field: +v, label: firstLabel(+v) } : { do: 'next', field: +v };
@@ -333,7 +335,7 @@
   /** Tabs, the columns on each, the columns you have made, and the one switch for the guided steps. Every change applies at once. */
   const MODE = { is: 'is', isnot: 'is not', fin: 'is finished', unfin: 'is not finished' };
   const modeOf = c => (c.test === 'finished' ? (c.not ? 'unfin' : 'fin') : c.not ? 'isnot' : 'is');
-  const fromMode = (m, field, label) => (m === 'fin' || m === 'unfin' ? { field, test: 'finished', not: m === 'unfin' } : { field, test: 'label', label, not: m === 'isnot' });
+  const fromMode = (m, field, label, more) => (m === 'fin' || m === 'unfin' ? { field, ...(more && more.length ? { with: more } : {}), test: 'finished', not: m === 'unfin' } : { field, test: 'label', label, not: m === 'isnot' });
   async function customize(startViewId) {
     if (!await K.ensureDept()) return;
     let cfg = await api('jobs/board'), viewId = startViewId, body = null;
@@ -358,7 +360,7 @@
       const f = cfg.fields.find(x => x.id === c.field) || { labels: [] }, m = modeOf(c);
       return `<div class="rl-s" data-i="${i}"><select data-fk="field" aria-label="Column">${statusFields().map(x => `<option value="${x.id}"${x.id === c.field ? ' selected' : ''}>${esc(x.name)}</option>`).join('')}</select>
         <select data-fk="mode" aria-label="Test">${Object.keys(MODE).map(k => `<option value="${k}"${k === m ? ' selected' : ''}>${MODE[k]}</option>`).join('')}</select>
-        ${m === 'is' || m === 'isnot' ? `<select data-fk="label" aria-label="Label">${f.labels.map(l => `<option value="${l.id}"${l.id === c.label ? ' selected' : ''}>${esc(l.name)}</option>`).join('')}</select>` : ''}
+        ${m === 'is' || m === 'isnot' ? `<select data-fk="label" aria-label="Label">${f.labels.map(l => `<option value="${l.id}"${l.id === c.label ? ' selected' : ''}>${esc(l.name)}</option>`).join('')}</select>` : `${(c.with || []).map(w => `<span class="chip">${esc((cfg.fields.find(x => x.id === w) || { name: '?' }).name)}<button type="button" data-act="rmwith" data-i="${i}" data-w="${w}" aria-label="Remove">${icon('x')}</button></span>`).join('')}<select data-fk="with" aria-label="Also"><option value="">+ and also…</option>${statusFields().filter(x => x.id !== c.field && !(c.with || []).includes(x.id)).map(x => `<option value="${x.id}">${esc(x.name)}</option>`).join('')}</select>`}
         <button type="button" class="btn" data-act="rmfilter" data-i="${i}" aria-label="Remove condition">${icon('x')}</button></div>`;
     };
     function draw() {
@@ -402,9 +404,10 @@
       else if (a === 'mrm') saveViews(l => { l.find(v => v.id === view.id).cols.splice(i, 1); });
       else if (a === 'addcol') { const v = $('#cz-addsel', body).value; if (v) saveViews(l => l.find(x => x.id === view.id).cols.push(v)); }
       else if (a === 'addfilter') { const f = statusFields()[0]; if (!f) { toast('Add a status column first', true); return; } saveViews(l => { const v = l.find(x => x.id === view.id); v.filter = [...(view.filter || []), fromMode('fin', f.id)]; }); }
+      else if (a === 'rmwith') saveViews(l => { l.find(x => x.id === view.id).filter = (view.filter || []).map((c, k) => (k === i ? { ...c, with: (c.with || []).filter(x => x !== +b.dataset.w) } : c)); });
       else if (a === 'rmfilter') saveViews(l => { l.find(x => x.id === view.id).filter = (view.filter || []).filter((_, k) => k !== i); });
       else if (a === 'template') {
-        if (!await window.Portal.ask({ title: 'Set up the door shop flow?', text: 'Adds a status column for each step (cutting, CNC, filling, verification, paint prep, paint, assembly, wrapping and QC, shipping), a tab for each station that shows a door once the steps before it are done, and two starter rules. Nothing you already have is changed.', ok: 'Set it up' })) return;
+        if (!await window.Portal.ask({ title: 'Set up the door shop flow?', text: 'Adds a status column for each step (cutting, CNC, filling, panel received, verification, paint prep, paint, assembly, wrapping, QC, shipping), a tab for each station that shows a door once the steps before it are done, and a rule that takes shipped doors off the board. Doors then say which parts they need (frame, panel, rail & stile). Your existing columns stay; CNC Frame and CNC Panel only get an extra “Not needed” label.', ok: 'Set it up' })) return;
         try { const r = await K.post('template', {}); toast(`Added ${r.columns.length} columns, ${r.tabs.length} tabs and ${r.rules.length} rules`); } catch (err) { toast(err.message, true); }
         cfg = await api('jobs/board'); draw();
       }
@@ -418,8 +421,9 @@
       if (t.dataset.fk) {
         const view = cfg.views.find(v => v.id === viewId), i = +t.closest('[data-i]').dataset.i, row = t.closest('[data-i]'), g = k => $(`[data-fk="${k}"]`, row);
         const field = +g('field').value, f = cfg.fields.find(x => x.id === field), m = g('mode').value;
+        const old = (view.filter || [])[i] || {}, more = t.dataset.fk === 'with' ? (t.value ? [...(old.with || []), +t.value] : old.with || []) : (old.with || []).filter(x => x !== field);
         const label = t.dataset.fk === 'label' ? +t.value : t.dataset.fk === 'field' ? (f.labels[0] || {}).id : (g('label') ? +g('label').value : (f.labels[0] || {}).id);
-        saveViews(l => { l.find(x => x.id === view.id).filter = (view.filter || []).map((c, k) => (k === i ? fromMode(m, field, label) : c)); });
+        saveViews(l => { l.find(x => x.id === view.id).filter = (view.filter || []).map((c, k) => (k === i ? fromMode(m, field, label, more) : c)); });
         return;
       }
       if (t.id === 'cz-vname') { const view = cfg.views.find(v => v.id === viewId); const n = t.value.trim(); if (n && n !== view.name) saveViews(l => { l.find(v => v.id === view.id).name = n; }); else t.value = view.name; }

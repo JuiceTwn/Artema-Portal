@@ -84,7 +84,7 @@ function install(JobStore, { actor, text, bad, now }) {
     },
     views() { return this.need().prepare('SELECT id, name, cols, filter FROM views ORDER BY position, id').all().map(v => ({ id: v.id, name: v.name, cols: JSON.parse(v.cols), filter: JSON.parse(v.filter || '[]') })); },
     /** Everything a screen needs to draw the board's columns and tabs. */
-    config() { return { ...this.settings(), fields: this.fields(), views: this.views(), rules: this.rules(), palette: PALETTE }; },
+    config() { return { ...this.settings(), fields: this.fields(), views: this.views(), rules: this.rules(), needs: this.needsConfig(), palette: PALETTE }; },
 
     // ---- columns (admin)
     addField(name, kind, dept, who) {
@@ -112,6 +112,7 @@ function install(JobStore, { actor, text, bad, now }) {
       return this.tx(db => {
         const f = db.prepare('SELECT name FROM fields WHERE id = ?').get(Number(id));
         if (!f) throw bad('No such column', 404);
+        this.forgetRefs(db, { field: Number(id) });
         db.prepare('DELETE FROM fields WHERE id = ?').run(Number(id));          // its labels and every door's value go with it
         for (const v of db.prepare('SELECT id, cols FROM views').all()) {
           const cols = JSON.parse(v.cols).filter(c => c !== '#' + id);
@@ -142,7 +143,9 @@ function install(JobStore, { actor, text, bad, now }) {
         const have = new Set(db.prepare('SELECT id FROM labels WHERE field_id = ?').all(Number(fieldId)).map(r => r.id));
         for (const l of clean) if (l.id && !have.has(l.id)) throw bad('That label is not in this column');
         const keep = new Set(clean.filter(l => l.id).map(l => l.id));
-        for (const id of have) if (!keep.has(id)) db.prepare('DELETE FROM labels WHERE id = ?').run(id);
+        const dropped = [...have].filter(id => !keep.has(id));
+        if (dropped.length) this.forgetRefs(db, { field: -1, labels: dropped });
+        for (const id of dropped) db.prepare('DELETE FROM labels WHERE id = ?').run(id);
         clean.forEach((l, i) => {
           if (l.id) db.prepare('UPDATE labels SET name = ?, color = ?, position = ?, done = ?, attn = ? WHERE id = ?').run(l.name, l.color, i, l.done ? 1 : 0, l.attn ? 1 : 0, l.id);
           else db.prepare('INSERT INTO labels (field_id, name, color, position, done, attn) VALUES (?, ?, ?, ?, ?, ?)').run(Number(fieldId), l.name, l.color, i, l.done ? 1 : 0, l.attn ? 1 : 0);
