@@ -115,7 +115,9 @@
 
     $('#board').innerHTML = `<div class="head"><div><div class="crumbs"><button>Board</button></div><div class="sub">${S.showArchived ? 'Archived doors' : `${total} door${total === 1 ? '' : 's'} in the shop`}${attn && !S.showArchived ? ` · <b class="red">${attn} need${attn === 1 ? 's' : ''} a look</b>` : ''}</div></div>
         <div class="head-actions"><button class="btn primary" id="bd-new">${icon('plus')}New door</button></div></div>
-      <div class="bd-tabs">${cfg.views.map(v => `<button class="${v.id === view.id ? 'on' : ''}" data-tab="${v.id}">${esc(v.name)}</button>`).join('')}${isAdmin() ? `<button class="gear" id="bd-cz">${icon('gear')}Customize</button>` : ''}</div>
+      <div class="bd-tabs">${cfg.views.length > 6
+        ? `<select class="bd-select" id="bd-view" aria-label="Which view">${cfg.views.map(v => `<option value="${v.id}"${v.id === view.id ? ' selected' : ''}>${esc(v.name)}</option>`).join('')}</select>`
+        : cfg.views.map(v => `<button class="${v.id === view.id ? 'on' : ''}" data-tab="${v.id}">${esc(v.name)}</button>`).join('')}${isAdmin() ? `<button class="gear" id="bd-cz">${icon('gear')}Customize</button>` : ''}</div>
       <div class="bd-tools"><label class="search bd-search">${icon('search')}<input id="bd-q" placeholder="Find a door, customer, project or note" autocomplete="off" spellcheck="false" value="${esc(S.boardQ || '')}"></label>
         <button class="bd-attn${S.boardAttn ? ' on' : ''}" id="bd-attn">${icon('alert')}Needs a look${attn ? ` (${attn})` : ''}</button>
         <button class="bd-attn${S.showArchived ? ' on2' : ''}" id="bd-arch">${S.showArchived ? 'Back to the board' : 'Archived'}</button>
@@ -123,6 +125,7 @@
       ${doors.length ? K.tableHtml(name, cols, rows) : `<div class="empty"><div class="ring">${icon('board')}</div><h3>${term || S.boardAttn ? 'Nothing matches' : S.showArchived ? 'Nothing archived' : 'No doors yet'}</h3><div>${term || S.boardAttn ? 'Try fewer words, or turn off “Needs a look”.' : S.showArchived ? 'Archived doors are kept here.' : 'Add doors from the Excel order forms, or press New door.'}</div>${!term && !S.boardAttn && !S.showArchived ? `<button class="btn primary big" id="bd-forms">${icon('door')}Add from order forms</button>` : ''}</div>`}`;
 
     $$('#board [data-tab]').forEach(b => b.onclick = () => { S.boardTab = b.dataset.tab; K.store.set('artema.boardtab', b.dataset.tab); redraw(); });
+    if ($('#bd-view')) $('#bd-view').onchange = e => { S.boardTab = e.target.value; K.store.set('artema.boardtab', e.target.value); redraw(); };
     const inp = $('#bd-q');
     inp.oninput = () => { S.boardQ = inp.value; S.boardSnap = ''; const pos = inp.selectionStart; loadBoard(true).then(() => { const n = $('#bd-q'); if (n) { n.focus(); n.setSelectionRange(pos, pos); } }); };
     $('#bd-attn').onclick = () => { S.boardAttn = !S.boardAttn; redraw(); };
@@ -369,7 +372,9 @@
       const keep = $('.pk-body', body.closest('dialog')); const top = keep ? keep.scrollTop : 0;
       body.innerHTML = `
         <h3 class="cz-h">Tabs</h3>
-        <div class="cz-tabs">${cfg.views.map(v => `<button type="button" class="cz-tab${v.id === view.id ? ' on' : ''}" data-act="tab" data-id="${v.id}">${esc(v.name)}</button>`).join('')}<button type="button" class="cz-tab add" data-act="newtab">+ New tab</button></div>
+        <div class="cz-tabs">${cfg.views.length > 6
+          ? `<select class="bd-select" id="cz-tabsel" aria-label="Which tab to edit">${cfg.views.map(v => `<option value="${v.id}"${v.id === view.id ? ' selected' : ''}>${esc(v.name)}</option>`).join('')}</select>`
+          : cfg.views.map(v => `<button type="button" class="cz-tab${v.id === view.id ? ' on' : ''}" data-act="tab" data-id="${v.id}">${esc(v.name)}</button>`).join('')}<button type="button" class="cz-tab add" data-act="newtab">+ New tab</button></div>
         <div class="cz-view">
           <div class="cz-name"><input class="field" id="cz-vname" value="${esc(view.name)}" maxlength="40" aria-label="Tab name"><button type="button" class="btn danger" data-act="deltab"${cfg.views.length < 2 ? ' disabled' : ''}>Delete this tab</button></div>
           <div class="pk-label">Which doors this tab shows</div>
@@ -418,6 +423,7 @@
     };
     const onChange = e => {
       const t = e.target;
+      if (t.id === 'cz-tabsel') { viewId = +t.value; draw(); return; }
       if (t.dataset.fk) {
         const view = cfg.views.find(v => v.id === viewId), i = +t.closest('[data-i]').dataset.i, row = t.closest('[data-i]'), g = k => $(`[data-fk="${k}"]`, row);
         const field = +g('field').value, f = cfg.fields.find(x => x.id === field), m = g('mode').value;

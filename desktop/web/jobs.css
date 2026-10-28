@@ -416,3 +416,28 @@ textarea.field:focus { border-color: var(--amber); }
 .chip button { border: 0; background: transparent; color: var(--muted); width: 26px; height: 26px; cursor: pointer; display: grid; place-items: center; }
 .cz-view .rl-s select { max-width: 190px; min-width: 0; }
 .cz-view .rl-s { flex-wrap: wrap; gap: 6px; }
+
+/* ---------- a computer that has a station: the menu is Home and Station, the rest behind "More" ---------- */
+.more-toggle { display: none; }
+body.simple .more-toggle { display: flex; }
+body.simple .more-toggle svg { transition: transform .2s; }
+body.simple.more .more-toggle svg { transform: rotate(90deg); }
+body.simple:not(.more) .side .nav[data-more], body.simple:not(.more) .side .side-label, body.simple:not(.more) .side .quick { display: none; }
+body.simple .side .nav[data-view="work"] { display: none; }
+.bd-select { min-height: 44px; min-width: 240px; border-radius: 12px; border: 1px solid var(--line-strong); background: var(--raise); color: var(--text); padding: 0 12px; font: inherit; font-weight: 700; }
+
+/* ---------- the Station screen: one station, nothing else ---------- */
+.st-head { justify-content: space-between; align-items: flex-end; }
+.st-head h1 { font-size: 34px; }
+.st-switch { min-height: 44px; padding: 0 16px; border-radius: 12px; border: 1px solid var(--line); background: transparent; color: var(--muted); font-weight: 600; display: inline-flex; align-items: center; gap: 8px; cursor: pointer; }
+.st-switch:hover { color: var(--text); border-color: var(--line-strong); }
+.st-pick { display: grid; gap: 16px; padding: 12px 0; }
+.st-pick h1 { margin: 0; font-size: 32px; }
+.st-sub { color: var(--muted); font-size: 17px; }
+.st-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 12px; }
+.st-opt { min-height: 84px; padding: 12px 16px; border-radius: 14px; border: 2px solid var(--line-strong); background: var(--panel); color: var(--text); text-align: left; display: grid; gap: 4px; align-content: center; cursor: pointer; }
+.st-opt b { font-size: 19px; }
+.st-opt span { font-size: 14px; color: var(--muted); }
+.st-opt.on { border-color: var(--amber); background: rgba(204, 125, 20, .16); }
+.st-pick-foot { display: flex; gap: 18px; align-items: center; flex-wrap: wrap; margin-top: 6px; }
+body.simple:not(.more) .side .dept-line { display: none; }
