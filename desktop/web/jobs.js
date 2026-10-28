@@ -599,7 +599,7 @@
   window.Portal.jobs = {
     addForms, openDoor: (ref, o) => openDoor(ref, o).catch(e => toast(e.message, true)), homeLine, startView,
     kit: { store, post, modal, choiceHtml, wireChoices, chosen, ensureDept, chooseDept, myDept, dcol, due, dueText, inkOn, density, densityBar, wireDensity, nat, both, doorCol, custCol, dueCell, filesCol, notesCol,
-      stageCol, nextCol, flagsCol, tableHtml, sortRows, wireTable, editText, editing, afterChange, meta, resetMeta, applyGuided, openDoor, act },
+      stageCol, nextCol, flagsCol, tableHtml, sortRows, wireTable, editText, editing, afterChange, meta, resetMeta, applyGuided, openDoor, act, undoToast, icon },
   };
   paintDeptLine();
 })();

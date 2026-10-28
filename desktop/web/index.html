@@ -49,6 +49,7 @@
     <div class="brand"><img src="/assets/logo-light.webp" alt="Artema"><span>Portal</span></div>
     <button class="nav active" data-view="home"><svg class="i"><use href="#i-home"/></svg>Home</button>
     <button class="nav" data-view="work"><svg class="i"><use href="#i-work"/></svg>My work<span class="count" id="work-count"></span></button>
+    <button class="nav" data-view="station"><svg class="i"><use href="#i-work"/></svg>Station</button>
     <button class="nav" data-view="board"><svg class="i"><use href="#i-board"/></svg>Board</button>
     <button class="nav" data-view="orders"><svg class="i"><use href="#i-door"/></svg>Door orders</button>
     <button class="nav" data-view="files"><svg class="i"><use href="#i-files"/></svg>Files</button>
@@ -83,6 +84,7 @@
       </section>
 
       <section class="view" id="view-work" hidden><div id="work"></div></section>
+      <section class="view" id="view-station" hidden><div id="station"></div></section>
       <section class="view" id="view-board" hidden><div id="board"></div></section>
 
       <section class="view" id="view-files" hidden>
@@ -120,6 +122,7 @@
 <nav class="tabs" id="tabs">
   <button class="active" data-view="home"><svg class="i"><use href="#i-home"/></svg>Home</button>
   <button data-view="work"><svg class="i"><use href="#i-work"/></svg>My work</button>
+  <button data-view="station"><svg class="i"><use href="#i-work"/></svg>Station</button>
   <button data-view="board"><svg class="i"><use href="#i-board"/></svg>Board</button>
   <button data-view="orders"><svg class="i"><use href="#i-door"/></svg>Orders</button>
   <button data-view="files"><svg class="i"><use href="#i-files"/></svg>Files</button>
@@ -139,5 +142,6 @@
 <script src="/portal.js"></script>
 <script src="/jobs.js"></script>
 <script src="/board.js"></script>
+<script src="/station.js"></script>
 </body>
 </html>

@@ -167,6 +167,7 @@
     setTimeout(() => { document.addEventListener('mousedown', outside, true); document.addEventListener('keydown', onKey, true); }, 0);
   }
   window.Portal.jobs.kit.editCell = editCell;
+  window.Portal.jobs.kit.FORM = FORM;
 
   // ---------- a new door by hand ----------
   async function newDoor(cfg) {

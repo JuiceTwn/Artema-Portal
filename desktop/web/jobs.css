@@ -352,3 +352,43 @@ textarea.field:focus { border-color: var(--amber); }
   .grid th.c-dt, .grid td.dt { display: none; }
   .grid td.stc { min-width: 118px; }
 }
+
+/* ---------- Station: the floor's queue. Big cards, big buttons, readable from arm's length ---------- */
+#station { max-width: 980px; margin: 0 auto; padding: 8px 4px 40px; }
+.st-head { display: flex; align-items: baseline; gap: 18px; flex-wrap: wrap; margin: 6px 0 12px; }
+.st-head h1 { margin: 0; font-size: 30px; }
+.st-sum { font-size: 18px; color: var(--muted); font-weight: 600; }
+.st-sum .red { color: var(--danger); }
+.st-tabs { display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 18px; }
+.st-tabs button { min-height: 52px; padding: 0 24px; border-radius: 999px; border: 1px solid var(--line-strong); background: var(--panel); color: var(--text); font-size: 18px; font-weight: 700; cursor: pointer; }
+.st-tabs button.on { background: var(--amber); border-color: var(--amber); color: #1a1106; }
+.st-list { display: grid; gap: 16px; }
+.st-card { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); padding: 18px 20px; display: grid; gap: 14px; }
+.st-card.first { border: 2px solid var(--amber); background: var(--raise); }
+.st-card.stuck { border-left: 8px solid var(--danger); }
+.st-top { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.st-num { font-size: 32px; letter-spacing: .01em; }
+.st-cust { font-size: 18px; color: var(--muted); font-weight: 600; flex: 1; min-width: 120px; }
+.st-top .due { font-size: 16px; padding: 7px 14px; }
+.st-next, .st-new { font-size: 12px; font-weight: 800; letter-spacing: .14em; padding: 5px 10px; border-radius: 999px; }
+.st-next { background: var(--amber); color: #1a1106; }
+.st-new { background: var(--ok); color: #082a15; }
+.st-info { display: flex; gap: 8px 22px; flex-wrap: wrap; font-size: 17px; font-weight: 600; }
+.st-info i { display: block; font-style: normal; font-size: 12px; color: var(--faint); text-transform: uppercase; letter-spacing: .08em; }
+.st-note { font-size: 16px; color: var(--amber-hi); }
+.st-rows { display: grid; gap: 10px; }
+.st-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.st-fn { flex: 0 0 140px; font-size: 16px; font-weight: 700; color: var(--muted); }
+.st-cur { flex: 1; min-width: 160px; min-height: 56px; border: 0; border-radius: 12px; font-size: 19px; font-weight: 700; cursor: pointer; }
+.st-cur.blank { background: rgba(251, 238, 223, .08); color: var(--muted); }
+.st-done { min-height: 56px; padding: 0 26px; border: 0; border-radius: 12px; background: var(--ok); color: #082a15; font-size: 19px; font-weight: 800; display: inline-flex; align-items: center; gap: 8px; cursor: pointer; }
+.st-done:disabled { opacity: .5; }
+.st-ok { color: var(--ok); width: 56px; display: grid; place-items: center; }
+.st-foot { display: flex; gap: 10px; justify-content: flex-end; }
+.st-stuck, .st-more { min-height: 48px; padding: 0 22px; border-radius: 12px; font-size: 16px; font-weight: 700; cursor: pointer; display: inline-flex; align-items: center; gap: 8px; }
+.st-stuck { border: 1px solid var(--danger); background: transparent; color: var(--danger); }
+.st-more { border: 1px solid var(--line-strong); background: transparent; color: var(--text); }
+.st-donebtn { margin-top: 22px; font-size: 16px; }
+.st-chips { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 10px; }
+.st-chip { padding: 6px 12px; border-radius: 999px; background: rgba(251, 238, 223, .07); color: var(--muted); font-weight: 700; }
+@media (max-width: 640px) { .st-fn { flex-basis: 100%; } .st-num { font-size: 28px; } }
