@@ -7,7 +7,7 @@
   const hexOf = (cfg, key) => (cfg.palette && cfg.palette[key]) || '#7e8499';
 
   // ---------- the columns a tab can show ----------
-  const BUILTIN = { door: 'Door', updates: 'Updates', files: 'Order form', ship: 'Ships', customer: 'Customer', notes: 'Notes', where: 'Where it is (guided steps)', next: 'Next step (guided steps)', flags: 'Needs a look (guided steps)' };
+  const BUILTIN = { door: 'Door', updates: 'Updates', files: 'Order form', ship: 'Ships', customer: 'Customer', notes: 'Notes', at: 'Where it is now', where: 'Where it is (guided steps)', next: 'Next step (guided steps)', flags: 'Needs a look (guided steps)' };
   const GUIDED_ONLY = ['where', 'next', 'flags'];
   /** Details read from the order form, so a department can see what it works from beside its statuses. */
   const FORM = {
@@ -24,14 +24,19 @@
     const f = cfg.fields.find(x => '#' + x.id === key); return f ? f.name : 'Missing column';
   };
 
-  /** A tab can show only the doors at one station (a label of a status column); a door that moves shows up on the next station's tab. */
-  const atStation = (d, view, cfg) => {
-    if (!view.station) return true;
-    const f = cfg.fields.find(x => x.labels.some(l => l.id === view.station));
-    const c = f && d.cells[f.id];
-    return !!c && c.label === view.station;
+  /**
+   * A tab shows the doors whose statuses meet its conditions: { field, test: 'label' | 'finished', label?, not }. That is how a door turns up
+   * on the next station's tab by itself: Paint shows a door once Paint Prep is finished and Paint is not.
+   */
+  const condHolds = (c, d, cfg) => {
+    const f = cfg.fields.find(x => x.id === c.field); if (!f) return true;
+    const cell = d.cells[c.field], l = cell && cell.label != null ? f.labels.find(x => x.id === cell.label) : null;
+    return (c.test === 'finished' ? !!(l && l.done) : !!l && l.id === c.label) !== !!c.not;
   };
-  window.Portal.jobs.kit.atStation = atStation;
+  const atTab = (d, view, cfg) => (view.filter || []).every(c => condHolds(c, d, cfg));
+  window.Portal.jobs.kit.atTab = atTab;
+  /** Where a door is right now: the tabs (with conditions) that show it. */
+  const whereIs = (d, cfg) => cfg.views.filter(v => (v.filter || []).length && atTab(d, v, cfg)).map(v => v.name);
   const labelOf = (f, d) => { const c = d.cells[f.id]; return c && c.label != null ? f.labels.find(l => l.id === c.label) || null : null; };
   /** A date as a coloured pill: red when past, orange when within three days, blue otherwise. */
   const datePill = value => {
@@ -64,6 +69,7 @@
       case 'ship': return K.dueCell;
       case 'customer': return K.custCol;
       case 'notes': return K.notesCol;
+      case 'at': return { label: 'Where it is', cls: 'c-tx', sort: (a, b) => K.nat(whereIs(a, cfg).join(), whereIs(b, cfg).join()), cell: d => { const w = whereIs(d, cfg); return w.length ? `<span class="tx">${esc(w.join(', '))}</span>` : '<span class="faint">—</span>'; } };
       case 'where': return K.stageCol;
       case 'next': return K.nextCol;
       case 'flags': return K.flagsCol;
@@ -101,10 +107,10 @@
     let cols = view.cols.map(k => colFor(k, cfg)).filter(Boolean);
     if (!cfg.doors.some(d => d.sourcePath)) cols = cols.filter(c => c !== K.filesCol);
     const term = (S.boardQ || '').toLowerCase().trim();
-    const doors = cfg.doors.filter(d => atStation(d, view, cfg) && (!term || [d.number, d.customer, d.project, d.notes].join(' ').toLowerCase().includes(term)) && (!S.boardAttn || needsLook(d, cfg)));
+    const doors = cfg.doors.filter(d => atTab(d, view, cfg) && (!term || [d.number, d.customer, d.project, d.notes].join(' ').toLowerCase().includes(term)) && (!S.boardAttn || needsLook(d, cfg)));
     const dateIdx = cols.findIndex(c => c.cls === 'c-dt'), shipIdx = cols.indexOf(K.dueCell);
     const rows = K.sortRows(name, cols, doors, { i: dateIdx >= 0 ? dateIdx : shipIdx >= 0 ? shipIdx : 0, dir: 1 });
-    const mine = cfg.doors.filter(d => atStation(d, view, cfg)), total = mine.length, attn = mine.filter(d => needsLook(d, cfg)).length;
+    const mine = cfg.doors.filter(d => atTab(d, view, cfg)), total = mine.length, attn = mine.filter(d => needsLook(d, cfg)).length;
 
     $('#board').innerHTML = `<div class="head"><div><div class="crumbs"><button>Board</button></div><div class="sub">${S.showArchived ? 'Archived doors' : `${total} door${total === 1 ? '' : 's'} in the shop`}${attn && !S.showArchived ? ` · <b class="red">${attn} need${attn === 1 ? 's' : ''} a look</b>` : ''}</div></div>
         <div class="head-actions"><button class="btn primary" id="bd-new">${icon('plus')}New door</button></div></div>
@@ -247,13 +253,12 @@
 
   // ---------- admins: automations ----------
   const DO_LABEL = { set: 'Set a status', next: 'Move a status to its next label', comment: 'Add an update', archive: 'Archive the door' };
-  const STARTER_STATIONS = ['Frame Prep', 'Paint', 'Assembly', 'Shipping', 'Done'];
   /** A rule as a sentence, for the list. */
   function sayRule(r, cfg) {
     const f = id => (cfg.fields.find(x => x.id === id) || { name: '?', labels: [] });
     const l = (fid, id) => (f(fid).labels.find(x => x.id === id) || { name: '?' }).name;
     const when = r.when.kind === 'added' ? 'a door is added' : `${f(r.when.field).name} ${r.when.label === null ? 'changes' : 'becomes ' + l(r.when.field, r.when.label)}`;
-    const cond = r.if.length ? ', and ' + r.if.map(c => `${f(c.field).name} ${c.not ? 'is not' : 'is'} ${l(c.field, c.label)}`).join(' and ') : '';
+    const cond = r.if.length ? ', and ' + r.if.map(c => `${f(c.field).name} ${MODE[modeOf(c)]}${c.test === 'finished' ? '' : ' ' + l(c.field, c.label)}`).join(' and ') : '';
     const then = r.then.map(a => a.do === 'set' ? `set ${f(a.field).name} to ${a.label === null ? 'empty' : l(a.field, a.label)}` : a.do === 'next' ? `move ${f(a.field).name} on` : a.do === 'comment' ? 'add an update' : 'archive it').join(', ');
     return `When ${when}${cond}: ${then}.`;
   }
@@ -266,13 +271,12 @@
       const draw = body => {
         const keep = body.closest('.pk-body'), top = keep ? keep.scrollTop : 0;
         body.innerHTML = `${!status.length ? '<div class="empty-note">Rules work on status columns. Add one first (Customize, Your columns).</div>' : ''}
-          ${!status.some(f => f.name.toLowerCase() === 'station') && status.length >= 0 ? `<div class="rl-help"><b>Stations.</b> To move doors from one station to the next, make a status column whose labels are the stations in order.<button type="button" class="btn" data-act="stations">Set up a Station column</button></div>` : ''}
           ${rows.map((r, i) => `<div class="rl${r.enabled ? '' : ' off'}" data-i="${i}">
             <div class="rl-h"><input class="field" data-k="name" value="${esc(r.name)}" maxlength="60" aria-label="Rule name" placeholder="Name this rule"><label class="pk-check"><input type="checkbox" data-k="enabled"${r.enabled ? ' checked' : ''}> On</label>
               <button type="button" class="btn" data-act="up"${i === 0 ? ' disabled' : ''} aria-label="Move up">▲</button><button type="button" class="btn" data-act="down"${i === rows.length - 1 ? ' disabled' : ''} aria-label="Move down">▼</button><button type="button" class="btn danger" data-act="del">Delete</button></div>
             <div class="rl-s"><b>When</b><select data-k="wk"><option value="cell"${r.when.kind === 'cell' ? ' selected' : ''}>a status changes</option><option value="added"${r.when.kind === 'added' ? ' selected' : ''}>a door is added</option></select>
               ${r.when.kind === 'cell' ? `<select data-k="wf">${fOpts(r.when.field)}</select><span>becomes</span><select data-k="wl">${lOpts(r.when.field, r.when.label, 'anything')}</select>` : ''}</div>
-            ${r.if.map((c, j) => `<div class="rl-s" data-j="${j}"><b>${j ? 'and' : 'If'}</b><select data-k="cf">${fOpts(c.field)}</select><select data-k="cn"><option value="is"${c.not ? '' : ' selected'}>is</option><option value="not"${c.not ? ' selected' : ''}>is not</option></select><select data-k="cl">${lOpts(c.field, c.label)}</select><button type="button" class="btn" data-act="rmif" aria-label="Remove condition">${icon('x')}</button></div>`).join('')}
+            ${r.if.map((c, j) => `<div class="rl-s" data-j="${j}"><b>${j ? 'and' : 'If'}</b><select data-k="cf">${fOpts(c.field)}</select><select data-k="cn">${Object.keys(MODE).map(k => `<option value="${k}"${k === modeOf(c) ? ' selected' : ''}>${MODE[k]}</option>`).join('')}</select>${c.test === 'finished' ? '' : `<select data-k="cl">${lOpts(c.field, c.label)}</select>`}<button type="button" class="btn" data-act="rmif" aria-label="Remove condition">${icon('x')}</button></div>`).join('')}
             ${r.if.length < 3 ? '<div class="rl-s"><button type="button" class="link" data-act="addif">+ Only if…</button></div>' : ''}
             ${r.then.map((a, j) => `<div class="rl-s" data-j="${j}"><b>${j ? 'and' : 'Then'}</b><select data-k="do">${Object.keys(DO_LABEL).map(k => `<option value="${k}"${a.do === k ? ' selected' : ''}>${DO_LABEL[k]}</option>`).join('')}</select>
               ${a.do === 'set' ? `<select data-k="af">${fOpts(a.field)}</select><span>to</span><select data-k="al">${lOpts(a.field, a.label)}<option value="__clear"${a.label === null ? ' selected' : ''}>(empty)</option></select>` : ''}
@@ -295,20 +299,11 @@
           else if (a === 'del') rows.splice(i, 1);
           else if (a === 'up') [rows[i - 1], rows[i]] = [rows[i], rows[i - 1]];
           else if (a === 'down') [rows[i + 1], rows[i]] = [rows[i], rows[i + 1]];
-          else if (a === 'addif') { const f = status[0]; r.if.push({ field: f.id, label: firstLabel(f.id), not: false }); }
+          else if (a === 'addif') { const f = status[0]; r.if.push({ field: f.id, test: 'label', label: firstLabel(f.id), not: false }); }
           else if (a === 'rmif') r.if.splice(j, 1);
           else if (a === 'addthen') { const f = status[0]; r.then.push({ do: 'set', field: f.id, label: firstLabel(f.id) }); }
           else if (a === 'rmthen') r.then.splice(j, 1);
-          else if (a === 'stations') {
-            try {
-              const id = (await K.post('field/add', { name: 'Station', kind: 'status' })).id;
-              await K.post('labels/save', { field: id, labels: STARTER_STATIONS.map((n, k) => ({ name: n, color: ['blue', 'forest', 'orange', 'violet', 'green'][k], done: n === 'Done', attn: false })) });
-              cfg = await api('jobs/board'); status.splice(0, status.length, ...cfg.fields.filter(f => f.kind === 'status'));
-              const st = cfg.fields.find(f => f.id === id);
-              rows.push({ name: 'New doors start at the first station', enabled: true, when: { kind: 'added' }, if: [], then: [{ do: 'set', field: id, label: st.labels[0].id }] });
-              toast('Station column added. Add it to a tab, then add a rule to move doors on.');
-            } catch (err) { toast(err.message, true); return; }
-          } else return;
+          else return;
           draw(body);
         });
         body.addEventListener('input', e => { const t = e.target, el = t.closest('.rl'); if (!el) return; const r = rows[+el.dataset.i]; if (t.dataset.k === 'name') r.name = t.value; else if (t.dataset.k === 'at') r.then[+t.closest('[data-j]').dataset.j].text = t.value; });
@@ -319,8 +314,8 @@
           else if (k === 'wk') { if (v === 'added') r.when = { kind: 'added' }; else { const f = status[0]; r.when = { kind: 'cell', field: f.id, label: null }; } }
           else if (k === 'wf') r.when = { kind: 'cell', field: +v, label: null };
           else if (k === 'wl') r.when.label = v === '' ? null : +v;
-          else if (k === 'cf') r.if[j] = { field: +v, label: firstLabel(+v), not: r.if[j].not };
-          else if (k === 'cn') r.if[j].not = v === 'not';
+          else if (k === 'cf') r.if[j] = fromMode(modeOf(r.if[j]), +v, firstLabel(+v));
+          else if (k === 'cn') r.if[j] = fromMode(v, r.if[j].field, r.if[j].label !== undefined ? r.if[j].label : firstLabel(r.if[j].field));
           else if (k === 'cl') r.if[j].label = +v;
           else if (k === 'do') { const f = status[0]; r.then[j] = v === 'set' ? { do: 'set', field: f.id, label: firstLabel(f.id) } : v === 'next' ? { do: 'next', field: f.id } : v === 'comment' ? { do: 'comment', text: '' } : { do: 'archive' }; }
           else if (k === 'af') r.then[j] = r.then[j].do === 'set' ? { do: 'set', field: +v, label: firstLabel(+v) } : { do: 'next', field: +v };
@@ -336,6 +331,9 @@
 
   // ---------- admins: customize the board ----------
   /** Tabs, the columns on each, the columns you have made, and the one switch for the guided steps. Every change applies at once. */
+  const MODE = { is: 'is', isnot: 'is not', fin: 'is finished', unfin: 'is not finished' };
+  const modeOf = c => (c.test === 'finished' ? (c.not ? 'unfin' : 'fin') : c.not ? 'isnot' : 'is');
+  const fromMode = (m, field, label) => (m === 'fin' || m === 'unfin' ? { field, test: 'finished', not: m === 'unfin' } : { field, test: 'label', label, not: m === 'isnot' });
   async function customize(startViewId) {
     if (!await K.ensureDept()) return;
     let cfg = await api('jobs/board'), viewId = startViewId, body = null;
@@ -344,7 +342,7 @@
       cfg = await api('jobs/board'); draw();
     };
     const saveViews = (mutate) => {
-      const list = cfg.views.map(v => ({ id: v.id, name: v.name, cols: [...v.cols] }));
+      const list = cfg.views.map(v => ({ id: v.id, name: v.name, cols: [...v.cols] }));          // no filter sent: the server keeps each tab's own
       mutate(list);
       return act('views/save', { views: list });
     };
@@ -354,6 +352,14 @@
       const form = Object.keys(FORM).map(k => opt('f:' + k, FORM[k][0])).join('');
       const mine = cfg.fields.map(f => opt('#' + f.id, f.name)).join('');
       return `${builtin ? `<optgroup label="Built in">${builtin}</optgroup>` : ''}${mine ? `<optgroup label="Your columns">${mine}</optgroup>` : ''}${form ? `<optgroup label="Details from the order form">${form}</optgroup>` : ''}`;
+    };
+    const statusFields = () => cfg.fields.filter(f => f.kind === 'status');
+    const filterRow = (c, i) => {
+      const f = cfg.fields.find(x => x.id === c.field) || { labels: [] }, m = modeOf(c);
+      return `<div class="rl-s" data-i="${i}"><select data-fk="field" aria-label="Column">${statusFields().map(x => `<option value="${x.id}"${x.id === c.field ? ' selected' : ''}>${esc(x.name)}</option>`).join('')}</select>
+        <select data-fk="mode" aria-label="Test">${Object.keys(MODE).map(k => `<option value="${k}"${k === m ? ' selected' : ''}>${MODE[k]}</option>`).join('')}</select>
+        ${m === 'is' || m === 'isnot' ? `<select data-fk="label" aria-label="Label">${f.labels.map(l => `<option value="${l.id}"${l.id === c.label ? ' selected' : ''}>${esc(l.name)}</option>`).join('')}</select>` : ''}
+        <button type="button" class="btn" data-act="rmfilter" data-i="${i}" aria-label="Remove condition">${icon('x')}</button></div>`;
     };
     function draw() {
       if (!body) return;
@@ -365,7 +371,9 @@
         <div class="cz-view">
           <div class="cz-name"><input class="field" id="cz-vname" value="${esc(view.name)}" maxlength="40" aria-label="Tab name"><button type="button" class="btn danger" data-act="deltab"${cfg.views.length < 2 ? ' disabled' : ''}>Delete this tab</button></div>
           <div class="pk-label">Which doors this tab shows</div>
-          <select class="field" id="cz-station" aria-label="Which doors this tab shows"><option value="">Every door</option>${cfg.fields.filter(f => f.kind === 'status').map(f => `<optgroup label="${esc(f.name)} is">${f.labels.map(l => `<option value="${l.id}"${view.station === l.id ? ' selected' : ''}>${esc(l.name)}</option>`).join('')}</optgroup>`).join('')}</select>
+          ${(view.filter || []).length ? '' : '<div class="dr-note">Every door. Add a condition to show only some, for example only doors whose Paint Prep is finished and Paint is not.</div>'}
+          ${(view.filter || []).map((c, i) => filterRow(c, i)).join('')}
+          <div class="rl-s"><button type="button" class="link" data-act="addfilter">+ Only doors where…</button></div>
           <div class="pk-label">Columns on this tab, left to right</div>
           ${view.cols.map((k, i) => `<div class="cz-col"><span>${esc(colLabel(k, cfg))}</span>${k === 'door' ? '<i>always first</i>' : `<span class="cz-b"><button type="button" data-act="mup" data-i="${i}" aria-label="Move left"${i <= 1 ? ' disabled' : ''}>▲</button><button type="button" data-act="mdown" data-i="${i}" aria-label="Move right"${i === view.cols.length - 1 ? ' disabled' : ''}>▼</button><button type="button" class="del" data-act="mrm" data-i="${i}" aria-label="Take off this tab">×</button></span>`}</div>`).join('')}
           <div class="cz-add"><select id="cz-addsel" aria-label="Add a column"><option value="">Add a column to this tab…</option>${addable(view)}</select><button type="button" class="btn" data-act="addcol">Add</button></div>
@@ -375,7 +383,8 @@
         ${cfg.fields.map(f => `<div class="cz-field"><input class="field" data-act="rename" data-id="${f.id}" value="${esc(f.name)}" maxlength="40" aria-label="Column name"><span class="kind">${{ status: 'Status', date: 'Date', text: 'Text' }[f.kind]}</span>${f.kind === 'status' ? `<button type="button" class="btn" data-act="labels" data-id="${f.id}">Edit labels</button>` : '<span></span>'}<button type="button" class="btn danger" data-act="delfield" data-id="${f.id}" data-name="${esc(f.name)}">Delete</button></div>`).join('') || '<div class="dr-note">No columns yet.</div>'}
         <div class="cz-field new"><input class="field" id="cz-newname" placeholder="New column name" maxlength="40"><select id="cz-newkind" aria-label="Kind of column"><option value="status">Status (dropdown)</option><option value="date">Date</option><option value="text">Text</option></select><button type="button" class="btn primary" data-act="addfield">Add column</button></div>
         <h3 class="cz-h">Automations</h3>
-        <div class="dr-note">A rule moves a door by itself, for example from Paint to Assembly when Paint is Done. The door then shows up on the next station's tab, so nobody has to be told.</div>
+        <div class="dr-note">Tabs already pull a door in when the steps before it are done. Rules do the rest: set a status, add an update, or take a door off the board when something happens.</div>
+        <button type="button" class="btn" data-act="template">Set up the door shop flow</button>
         <button type="button" class="btn" data-act="rules">${icon('gear')}Automations (${(cfg.rules || []).length})</button>
         <h3 class="cz-h">Guided steps</h3>
         <label class="pk-check"><input type="checkbox" id="cz-guided"${cfg.guided ? ' checked' : ''}> Turn on guided steps (My work, the parts checklist, sending a door back for repair)</label>
@@ -392,6 +401,13 @@
       else if (a === 'mdown') saveViews(l => { const c = l.find(v => v.id === view.id).cols; [c[i + 1], c[i]] = [c[i], c[i + 1]]; });
       else if (a === 'mrm') saveViews(l => { l.find(v => v.id === view.id).cols.splice(i, 1); });
       else if (a === 'addcol') { const v = $('#cz-addsel', body).value; if (v) saveViews(l => l.find(x => x.id === view.id).cols.push(v)); }
+      else if (a === 'addfilter') { const f = statusFields()[0]; if (!f) { toast('Add a status column first', true); return; } saveViews(l => { const v = l.find(x => x.id === view.id); v.filter = [...(view.filter || []), fromMode('fin', f.id)]; }); }
+      else if (a === 'rmfilter') saveViews(l => { l.find(x => x.id === view.id).filter = (view.filter || []).filter((_, k) => k !== i); });
+      else if (a === 'template') {
+        if (!await window.Portal.ask({ title: 'Set up the door shop flow?', text: 'Adds a status column for each step (cutting, CNC, filling, verification, paint prep, paint, assembly, wrapping and QC, shipping), a tab for each station that shows a door once the steps before it are done, and two starter rules. Nothing you already have is changed.', ok: 'Set it up' })) return;
+        try { const r = await K.post('template', {}); toast(`Added ${r.columns.length} columns, ${r.tabs.length} tabs and ${r.rules.length} rules`); } catch (err) { toast(err.message, true); }
+        cfg = await api('jobs/board'); draw();
+      }
       else if (a === 'rules') { await editRules(cfg); cfg = await api('jobs/board'); draw(); }
       else if (a === 'labels') { const f = cfg.fields.find(x => String(x.id) === b.dataset.id); if (await editLabels(f, cfg)) { cfg = await api('jobs/board'); draw(); } }
       else if (a === 'delfield') { if (await window.Portal.ask({ title: `Delete “${b.dataset.name}”?`, text: 'The column and every door’s value in it are removed. This cannot be undone.', ok: 'Delete column', danger: true })) act('field/delete', { id: b.dataset.id }); }
@@ -399,9 +415,15 @@
     };
     const onChange = e => {
       const t = e.target;
+      if (t.dataset.fk) {
+        const view = cfg.views.find(v => v.id === viewId), i = +t.closest('[data-i]').dataset.i, row = t.closest('[data-i]'), g = k => $(`[data-fk="${k}"]`, row);
+        const field = +g('field').value, f = cfg.fields.find(x => x.id === field), m = g('mode').value;
+        const label = t.dataset.fk === 'label' ? +t.value : t.dataset.fk === 'field' ? (f.labels[0] || {}).id : (g('label') ? +g('label').value : (f.labels[0] || {}).id);
+        saveViews(l => { l.find(x => x.id === view.id).filter = (view.filter || []).map((c, k) => (k === i ? fromMode(m, field, label) : c)); });
+        return;
+      }
       if (t.id === 'cz-vname') { const view = cfg.views.find(v => v.id === viewId); const n = t.value.trim(); if (n && n !== view.name) saveViews(l => { l.find(v => v.id === view.id).name = n; }); else t.value = view.name; }
       else if (t.dataset.act === 'rename') { const f = cfg.fields.find(x => String(x.id) === t.dataset.id), n = t.value.trim(); if (n && n !== f.name) act('field/rename', { id: f.id, name: n }); else t.value = f.name; }
-      else if (t.id === 'cz-station') { const view = cfg.views.find(v => v.id === viewId); saveViews(l => { l.find(v => v.id === view.id).station = t.value ? Number(t.value) : null; }); }
       else if (t.id === 'cz-guided') act('settings', { guided: t.checked }).then(() => K.resetMeta());
     };
     await K.modal({

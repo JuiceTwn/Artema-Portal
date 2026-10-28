@@ -25,7 +25,7 @@ const { STEPS, STEP_KEYS, stepOf, COMPONENT_KINDS, NEEDED_BEFORE, DEFAULT_CHECKS
 const ACTORS = [...FLOW_DEPARTMENTS, 'Skins', 'Panel Assembly', 'Rail & Stile', 'Office'];
 const SOURCE_KINDS = ['internal', 'external'];
 
-const SCHEMA_VERSION = 3;
+const SCHEMA_VERSION = 4;
 const MIGRATIONS = {
   1: `
     CREATE TABLE projects (
@@ -155,6 +155,12 @@ const MIGRATIONS = {
       rule     TEXT    NOT NULL
     );
     ALTER TABLE views ADD COLUMN station INTEGER;
+  `,
+  // a tab shows the doors whose statuses meet a list of conditions (replaces the single station of 3)
+  4: `
+    ALTER TABLE views ADD COLUMN filter TEXT NOT NULL DEFAULT '[]';
+    UPDATE views SET filter = json_array(json_object('field', (SELECT field_id FROM labels WHERE id = views.station), 'test', 'label', 'label', station, 'not', json('false')))
+      WHERE station IS NOT NULL AND EXISTS (SELECT 1 FROM labels WHERE id = views.station);
   `,
 };
 
@@ -546,5 +552,6 @@ class JobStore {
 
 require('./columns').install(JobStore, { actor, text, bad, now });
 require('./rules').install(JobStore, { actor, text, bad, now });
+require('./template').install(JobStore, { actor, bad });
 
 module.exports = { JobStore, ACTORS, STEPS };

@@ -18,6 +18,31 @@ const WHEN_KINDS = ['cell', 'added'], DOS = ['set', 'next', 'comment', 'archive'
 
 function install(JobStore, { text, bad, now }) {
   Object.assign(JobStore.prototype, {
+    /**
+     * Checks a list of conditions on statuses, used by rules ("if") and by tabs (which doors to show). A condition is
+     * { field, test: 'label' | 'finished', label?, not } : the status is that label, or its label is flagged "counts as done".
+     * `not` turns it round. Returns them in their stored form; anything pointing at a column or label that does not exist is refused.
+     */
+    cleanConds(db, list, max, who) {
+      if (!Array.isArray(list)) return [];
+      if (list.length > max) throw bad(`${who}: up to ${max} conditions`);
+      const fields = new Map(db.prepare('SELECT id, kind FROM fields').all().map(f => [f.id, f.kind]));
+      const labels = new Map(db.prepare('SELECT id, field_id FROM labels').all().map(l => [l.id, l.field_id]));
+      return list.map(c => {
+        if (!c || fields.get(Number(c.field)) !== 'status') throw bad(`${who}: a condition needs a status column`);
+        const test = c.test === 'finished' ? 'finished' : 'label';
+        if (test === 'finished') return { field: Number(c.field), test, not: !!c.not };
+        if (labels.get(Number(c.label)) !== Number(c.field)) throw bad(`${who}: a condition points at a label that does not exist`);
+        return { field: Number(c.field), test, label: Number(c.label), not: !!c.not };
+      });
+    },
+    /** Does a door's status meet a condition? `cur` is [{ field_id, label_id }] and `done` the ids of labels that count as done. */
+    holdsCond(c, cur, done) {
+      const at = cur.find(x => x.field_id === c.field), id = at ? at.label_id : null;
+      const yes = c.test === 'finished' ? id !== null && done.has(id) : id === c.label;
+      return yes !== !!c.not;
+    },
+
     /** The record that follows one change through the rules. */
     ruleContext() { return { fired: new Set(), depth: 0, auto: [], rules: true }; },
 
@@ -50,11 +75,7 @@ function install(JobStore, { text, bad, now }) {
             when.field = Number(w.field); when.label = w.label === null || w.label === undefined || w.label === '' ? null : Number(w.label);
             if (when.label !== null && !labelOk(when.field, when.label)) throw bad(`“${name}”: that label is not in the column it watches`);
           }
-          const conds = (Array.isArray(r.if) ? r.if : []).map(c => {
-            if (!c || !fieldOk(c.field, true) || !labelOk(c.field, c.label)) throw bad(`“${name}”: a condition points at a label that does not exist`);
-            return { field: Number(c.field), label: Number(c.label), not: !!c.not };
-          });
-          if (conds.length > MAX_IF) throw bad(`“${name}”: a rule can have up to ${MAX_IF} conditions`);
+          const conds = this.cleanConds(db, r.if, MAX_IF, `“${name}”`);
           const acts = (Array.isArray(r.then) ? r.then : []).map(a => {
             if (!a || !DOS.includes(a.do)) throw bad(`“${name}”: pick what it does`);
             if (a.do === 'set') {
@@ -101,8 +122,8 @@ function install(JobStore, { text, bad, now }) {
         if (w.kind !== trigger.kind) continue;
         if (w.kind === 'cell' && (w.field !== trigger.field || (w.label !== null && w.label !== trigger.label))) continue;
         const cur = db.prepare('SELECT field_id, label_id FROM cells WHERE door_id = ?').all(doorId);
-        const is = (f, l) => cur.some(c => c.field_id === f && c.label_id === l);
-        if (!r.if.every(c => is(c.field, c.label) !== c.not)) continue;
+        const done = new Set(db.prepare('SELECT id FROM labels WHERE done = 1').all().map(l => l.id));
+        if (!r.if.every(c => this.holdsCond({ test: 'label', ...c }, cur, done))) continue;
         ctx.fired.add(row.id);
         ctx.depth++;
         try {

@@ -8,6 +8,8 @@ Effort: **S** = days, **M** = 1 to 3 weeks, **L** = a month or more.
 
 Editable status, date and text columns with admin-editable coloured labels; tabs (views) that choose the columns; per-door comments and notes; archive; New door; dense Board with Compact / Standard / Large rows; Customize screen (admins only); order-form intake; backups; optional guided steps (off by default). See [PLAN.md](PLAN.md).
 
+Since then: **Station** (a big-button floor queue per tab, one-tap Done, two-tap Stuck), **tab filters** (a tab shows a door once the steps before it are finished, so a door turns up on the next station by itself, including steps that wait for several others), **automations** (rules: when / if / then, run in the same transaction, one Undo for a change and what it set off), and a **door shop starter** that sets up the Artema flow (cutting, three CNC tracks, frame filling, rail & stile filling and assembly, verification, paint prep, paint, assembly, wrapping and QC, shipping). Not built yet from the automations plan: rules that fire on time (ship date near, door stale) and send-back-for-rework.
+
 ## Principles
 
 - **A template, not a door app.** Columns, labels and tabs are already data an admin edits. To work for any manufacturer, the rest should become data too: the department list, what the order-form reader looks for, and the stations a door moves through.

@@ -86,14 +86,53 @@ try {
   check('a rule with nothing to do is refused', throws(() => js.saveRules([{ ...rule1, then: [] }], 'Office', ''), 400, 'something to do'));
   check('a failed save changes nothing', js.rules().length === 2);
 
-  // tabs that show one station
+  // tabs that show only some doors: conditions on statuses
   const views = js.views();
-  js.saveViews(views.map((v, i) => ({ id: v.id, name: v.name, cols: v.cols, station: i === 0 ? st('Paint') : undefined })), 'Office', '');
-  check('a tab can show only one station', js.views()[0].station === st('Paint') && js.views()[1].station === null);
+  check('a tab starts with no filter', views.every(v => Array.isArray(v.filter) && v.filter.length === 0));
+  const atPaint = [{ field: stationId, test: 'label', label: st('Paint'), not: false }];
+  js.saveViews(views.map((v, i) => ({ id: v.id, name: v.name, cols: v.cols, filter: i === 0 ? atPaint : undefined })), 'Office', '');
+  check('a tab can be filtered by a label', js.views()[0].filter.length === 1 && js.views()[0].filter[0].label === st('Paint') && js.views()[1].filter.length === 0);
   js.saveViews(js.views().map(v => ({ id: v.id, name: v.name, cols: v.cols })), 'Office', '');
-  check('saving tabs without a station keeps the station (older screens)', js.views()[0].station === st('Paint'));
-  js.saveLabels(stationId, station.labels.filter(l => l.name !== 'Paint').map(l => ({ id: l.id, name: l.name, color: l.color, done: l.done })), 'Office', '');
-  check('deleting a station label clears the tabs that showed it', js.views()[0].station === null);
+  check('saving tabs without a filter keeps it (older screens)', js.views()[0].filter.length === 1);
+  check('a filter pointing at a label of another column is refused', throws(() => js.saveViews(js.views().map(v => ({ id: v.id, name: v.name, cols: v.cols, filter: [{ field: frame.id, test: 'label', label: st('Paint') }] })), 'Office', ''), 400, 'label'));
+  js.saveViews(js.views().map(v => ({ id: v.id, name: v.name, cols: v.cols, filter: [{ field: frame.id, test: 'finished', not: true }] })), 'Office', '');
+  check('a filter can ask for finished / not finished', js.views()[0].filter[0].test === 'finished' && js.views()[0].filter[0].not === true && !('label' in js.views()[0].filter[0]));
+
+  // "is finished" in a rule's conditions
+  js.saveRules([{ name: 'Both CNC done', when: { kind: 'cell', field: panel.id, label: null }, if: [{ field: panel.id, test: 'finished' }, { field: frame.id, test: 'finished' }], then: [{ do: 'comment', text: 'CNC finished' }] }], 'Office', '');
+  const d5 = js.createDoor({ number: '26-705', components: [] }, 'Office');
+  js.setCell(d5, panel.id, lab(panel, 'Done'), 'Frame Prep', '');
+  check('a rule can ask whether a status is finished', js.comments(d5).length === 0);
+  js.setCell(d5, frame.id, lab(frame, 'Done'), 'Frame Prep', ''); js.setCell(d5, panel.id, lab(panel, 'Working on it'), 'Frame Prep', ''); js.setCell(d5, panel.id, lab(panel, 'Done'), 'Frame Prep', '');
+  check('…and it fires once both are', js.comments(d5).length === 1);
+
+  // the door shop starter
+  js.saveViews(js.views().map(v => ({ id: v.id, name: v.name, cols: v.cols, filter: [] })), 'Office', '');
+  const t = js.applyDoorShopTemplate('Office', '');
+  const f2 = js.fields(), by = n => f2.find(f => f.name === n);
+  check('the starter makes a column per step and reuses the ones that exist', t.columns.length === 10 && !t.columns.includes('CNC Frame') && by('Verification') && by('Paint').labels.some(l => l.done));
+  const tabs = js.views(), tab = n => tabs.find(v => v.name === n);
+  const ver = tab('Verification').filter;
+  check('Verification waits for frame filling, the panel and the rail & stile', ver.length === 4 && ver.slice(0, 3).every(c => c.test === 'finished' && !c.not) && ver[3].not === true && ver[3].field === by('Verification').id);
+  check('each station tab shows a door once the step before it is done', tab('Paint').filter.length === 2 && tab('Paint').filter[0].field === by('Paint Prep').id && tab('Where is everything').filter.length === 0);
+  const t2 = js.applyDoorShopTemplate('Office', '');
+  check('applying it again changes nothing', !t2.columns.length && !t2.tabs.length && !t2.rules.length);
+  // walk one door through and check where it shows up
+  const done = n => by(n).labels.find(l => l.done).id;
+  const shown = id => { const cur = Object.entries(js.cellsOf(id)).map(([f, c]) => ({ field_id: +f, label_id: c.label })); const dn = new Set(js.fields().flatMap(f => f.labels.filter(l => l.done).map(l => l.id)));
+    return js.views().filter(v => v.filter.length && v.filter.every(c => js.holdsCond(c, cur, dn))).map(v => v.name); };
+  const d6 = js.createDoor({ number: '26-706', components: [] }, 'Office');
+  check('a new door starts at Material Cutting, with no rail & stile', shown(d6).join() === 'Material Cutting' && js.cellsOf(d6)[by('CNC Rail & Stile').id].label === by('CNC Rail & Stile').labels.find(l => l.name === 'Not needed').id);
+  js.setCell(d6, by('Material Cutting').id, done('Material Cutting'), 'Office', '');
+  check('then it is on the three CNC tabs at once', shown(d6).sort().join() === 'CNC Frame,CNC Panel');
+  js.setCell(d6, by('CNC Frame').id, done('CNC Frame'), 'Office', ''); js.setCell(d6, by('CNC Panel').id, done('CNC Panel'), 'Office', '');
+  check('the frame goes to Frame Filling; the finished panel waits', shown(d6).join() === 'Frame Filling');
+  js.setCell(d6, by('Frame Filling').id, done('Frame Filling'), 'Office', '');
+  check('with everything made, it is on Verification alone', shown(d6).join() === 'Verification', shown(d6));
+  for (const n of ['Verification', 'Paint Prep', 'Paint', 'Assembly', 'Wrapping & QC']) js.setCell(d6, by(n).id, done(n), 'Office', '');
+  check('then it goes through paint prep, paint, assembly and QC to Shipping', shown(d6).join() === 'Shipping');
+  js.setCell(d6, by('Shipping').id, done('Shipping'), 'Office', '');
+  check('shipped doors leave the board by themselves', js.door(d6).archived === true && shown(d6).length === 0);
   js.close();
 } catch (e) {
   console.log('FAIL unexpected error: ' + (e && e.stack || e));

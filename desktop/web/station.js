@@ -39,7 +39,7 @@
     if (!view) { host.innerHTML = `<div class="empty"><div class="ring">${icon('board')}</div><h3>No stations yet</h3><div>An admin sets them up from the Board (Customize).</div></div>`; return; }
     const fields = stationFields(view, cfg), seen = seenSet(view, cfg.doors);
     const forms = view.cols.filter(k => k.startsWith('f:')).map(k => K.FORM && K.FORM[k.slice(2)]).filter(Boolean).slice(0, 3);
-    const here = cfg.doors.filter(d => K.atStation(d, view, cfg));          // a tab can show one station only
+    const here = cfg.doors.filter(d => K.atTab(d, view, cfg));          // a tab can show only some doors
     const open = here.filter(d => !finished(d, fields));
     const doneN = here.length - open.length;
     const key = d => (d.shipDate && /^\d{4}-\d{2}-\d{2}$/.test(d.shipDate) ? d.shipDate : '9999');

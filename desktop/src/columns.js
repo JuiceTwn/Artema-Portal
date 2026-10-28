@@ -20,8 +20,8 @@ const PALETTE = {
   brown: '#6b4640', grey: '#7e8499',
 };
 const FIELD_KINDS = ['status', 'date', 'text'];
-const BUILTIN_COLS = ['door', 'updates', 'files', 'ship', 'customer', 'notes', 'where', 'next', 'flags'];
-const MAX_LABELS = 40, MAX_FIELDS = 40, MAX_VIEWS = 20, MAX_COLS = 40;
+const BUILTIN_COLS = ['door', 'updates', 'files', 'ship', 'customer', 'notes', 'at', 'where', 'next', 'flags'];
+const MAX_LABELS = 40, MAX_FIELDS = 40, MAX_VIEWS = 30, MAX_COLS = 40, MAX_FILTER = 6;
 
 /** What a fresh install starts with: the CNC columns as they are on the Monday board today. The admin changes all of it. */
 const SEED_FIELDS = [
@@ -82,10 +82,7 @@ function install(JobStore, { actor, text, bad, now }) {
         ...f, labels: labels.filter(l => l.field_id === f.id).map(l => ({ id: l.id, name: l.name, color: l.color, done: !!l.done, attn: !!l.attn })),
       }));
     },
-    views() {
-      const db = this.need(), have = new Set(db.prepare('SELECT id FROM labels').all().map(r => r.id));
-      return db.prepare('SELECT id, name, cols, station FROM views ORDER BY position, id').all().map(v => ({ id: v.id, name: v.name, cols: JSON.parse(v.cols), station: v.station !== null && have.has(v.station) ? v.station : null }));
-    },
+    views() { return this.need().prepare('SELECT id, name, cols, filter FROM views ORDER BY position, id').all().map(v => ({ id: v.id, name: v.name, cols: JSON.parse(v.cols), filter: JSON.parse(v.filter || '[]') })); },
     /** Everything a screen needs to draw the board's columns and tabs. */
     config() { return { ...this.settings(), fields: this.fields(), views: this.views(), rules: this.rules(), palette: PALETTE }; },
 
@@ -171,16 +168,15 @@ function install(JobStore, { actor, text, bad, now }) {
           if (!cols.every(okCol)) throw bad('A tab has a column that does not exist');
           if (!cols.includes('door')) cols.unshift('door');          // every tab starts with the door
           if (v.id && !have.has(Number(v.id))) throw bad('No such tab', 404);
-          const was = v.id ? db.prepare('SELECT station FROM views WHERE id = ?').get(Number(v.id)) : null;
-          const st = v.station === undefined ? (was ? was.station : null) : v.station === null || v.station === '' ? null : Number(v.station);          // not sent: keep what is there
-          if (st !== null && !db.prepare('SELECT 1 FROM labels WHERE id = ?').get(st)) throw bad('A tab shows a station that does not exist');
-          return { id: v.id ? Number(v.id) : 0, name, cols, station: st };
+                    const was = v.id ? db.prepare('SELECT filter FROM views WHERE id = ?').get(Number(v.id)) : null;
+          const filter = v.filter === undefined ? (was ? JSON.parse(was.filter) : []) : this.cleanConds(db, v.filter, MAX_FILTER, `“${name}”`);          // not sent: keep what is there
+          return { id: v.id ? Number(v.id) : 0, name, cols, filter: JSON.stringify(filter) };
         });
         const keep = new Set(clean.filter(v => v.id).map(v => v.id));
         for (const id of have) if (!keep.has(id)) db.prepare('DELETE FROM views WHERE id = ?').run(id);
         clean.forEach((v, i) => {
-          if (v.id) db.prepare('UPDATE views SET name = ?, cols = ?, position = ?, station = ? WHERE id = ?').run(v.name, JSON.stringify(v.cols), i, v.station, v.id);
-          else db.prepare('INSERT INTO views (name, position, cols, station) VALUES (?, ?, ?, ?)').run(v.name, i, JSON.stringify(v.cols), v.station);
+          if (v.id) db.prepare('UPDATE views SET name = ?, cols = ?, position = ?, filter = ? WHERE id = ?').run(v.name, JSON.stringify(v.cols), i, v.filter, v.id);
+          else db.prepare('INSERT INTO views (name, position, cols, filter) VALUES (?, ?, ?, ?)').run(v.name, i, JSON.stringify(v.cols), v.filter);
         });
         this.event(db, null, 'board.views.saved', d, who, { count: clean.length });
       });
