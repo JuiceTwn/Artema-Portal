@@ -23,6 +23,7 @@ const PERMISSIONS = {
   'pin.rotate': 'admin',
   'devices.tag': 'admin',
   'devices.remove': 'admin',
+  'parts.info': 'admin',            // the picture and "where it is" shown for a component (the office, by department, may too: see server.js)
   'board.edit': 'admin',            // the board's columns, labels and tabs, and whether the guided steps are on
   'devices.role': 'admin',          // admins hand out `general` and `admin`; only dev hands out `dev`: see canAssign
   'server.update': 'dev',           // installs new software on the main computer from GitHub

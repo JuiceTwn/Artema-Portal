@@ -25,7 +25,7 @@ const { STEPS, STEP_KEYS, stepOf, COMPONENT_KINDS, NEEDED_BEFORE, DEFAULT_CHECKS
 const ACTORS = [...FLOW_DEPARTMENTS, 'Skins', 'Panel Assembly', 'Rail & Stile', 'Office'];
 const SOURCE_KINDS = ['internal', 'external'];
 
-const SCHEMA_VERSION = 6;
+const SCHEMA_VERSION = 7;
 const MIGRATIONS = {
   1: `
     CREATE TABLE projects (
@@ -186,6 +186,17 @@ const MIGRATIONS = {
     );
     CREATE INDEX corrections_door ON corrections(door_id, id);
     CREATE INDEX corrections_at ON corrections(at);
+  `,
+  // what a component looks like and where it is kept (partinfo.js)
+  7: `
+    CREATE TABLE part_info (
+      key        TEXT PRIMARY KEY,
+      name       TEXT    NOT NULL,
+      location   TEXT    NOT NULL DEFAULT '',
+      image      TEXT    NOT NULL DEFAULT '',
+      updated_at INTEGER NOT NULL,
+      updated_by TEXT    NOT NULL DEFAULT ''
+    ) WITHOUT ROWID;
   `,
 };
 
@@ -582,5 +593,6 @@ require('./template').install(JobStore, { actor, bad });
 require('./needs').install(JobStore, { actor, bad });
 require('./corrections').install(JobStore, { actor, text, bad, now });
 require('./catchup').install(JobStore);
+require('./partinfo').install(JobStore, { actor, text, bad, now });
 
 module.exports = { JobStore, ACTORS, STEPS };

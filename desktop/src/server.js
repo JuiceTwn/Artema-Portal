@@ -33,6 +33,8 @@ function createPortalServer(store, port, webDir, hooks = {}) {
   const trustLoopback = () => (hooks.trustLoopback ? hooks.trustLoopback() : true);
   const pinGuess = new FailLimiter(10, 10 * 60 * 1000);          // 10 wrong PINs from one address, then a 10-minute pause
 
+  /** A computer an admin has put in the Office department: it may edit what a component looks like and where it is, like an admin. */
+  const isOffice = a => !!(a && a.id && store.devices[a.id] && store.devices[a.id].tag === 'Office');
   /** The tabs a computer can be assigned to (none when jobs are unavailable). */
   const stationChoices = () => { try { return hooks.jobs && hooks.jobs.ok ? hooks.jobs.stationChoices() : []; } catch { return []; } };
   function authenticate(req) {
@@ -96,7 +98,7 @@ function createPortalServer(store, port, webDir, hooks = {}) {
       if (req.method === 'GET') {
         if (ep === 'me') {
           const ok = new Set(stationChoices().map(c => c.id));
-          return sendJson(res, { kind: auth.kind, name: auth.name, role: auth.role, tag: (auth.id && store.devices[auth.id] && store.devices[auth.id].tag) || '', stations: ((auth.id && store.devices[auth.id] && store.devices[auth.id].stations) || []).filter(x => ok.has(x)) });
+          return sendJson(res, { kind: auth.kind, name: auth.name, role: auth.role, partsEdit: can(auth.role, 'parts.info') || isOffice(auth), tag: (auth.id && store.devices[auth.id] && store.devices[auth.id].tag) || '', stations: ((auth.id && store.devices[auth.id] && store.devices[auth.id].stations) || []).filter(x => ok.has(x)) });
         }
         if (ep.startsWith('orders')) {
           if (!hooks.orders) throw new HttpError(404, 'Not found');
@@ -167,7 +169,7 @@ function createPortalServer(store, port, webDir, hooks = {}) {
         return sendJson(res, { ok: true });
       } else if (req.method === 'POST') {
         const b = await readBody(req);
-        if (ep.startsWith('jobs/')) return sendJson(res, jobsApi.post(hooks.jobs, hooks.orders, ep, b, need));
+        if (ep.startsWith('jobs/')) return sendJson(res, jobsApi.post(hooks.jobs, hooks.orders, ep, b, need, { office: isOffice(auth) }));
         if (ep === 'mkdir') { store.mkdir(b.path, who); return sendJson(res, { ok: true }); }
         if (ep === 'delete') { store.delete(b.path, who); return sendJson(res, { ok: true }); }
         if (ep === 'move') { store.move(b.from, b.to, who); return sendJson(res, { ok: true }); }

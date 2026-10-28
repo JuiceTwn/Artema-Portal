@@ -198,6 +198,22 @@ try {
   js.deleteField(F('QC').id, 'Office', '');
   check('a tab loses a condition on a deleted column rather than keep pointing at it', js.views().every(v => v.filter.every(c => js.fields().some(f => f.id === c.field) && (c.with || []).every(x => js.fields().some(f => f.id === x)))));
   check('a rule that watched a deleted column is switched off', js.rules().find(r => r.name === 'Needs QC').enabled === false);
+  // what a component looks like and where it is kept
+  {
+    const tiny = 'data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAMCAgICAgMCAgIDAwMDBAYEBAQEBAgGBgUGCQgKCgkICQkKDA8MCgsOCwkJDRENDg8QEBEQCgwSExIQEw8QEBD/yQALCAABAAEBAREA/8wABgAQEAX/2gAIAQEAAD8A0s8g/9k=';
+    check('a component has nothing set to start with', js.partInfo('Mullcaps').set === false && js.partInfo('Mullcaps').location === '' && js.partInfoList().length === 0);
+    js.savePartInfo('Mullcaps', { location: 'Rack 3, shelf B', image: tiny }, 'Office', 'Ben');
+    check('a location and a picture are saved, found by any spelling', js.partInfo('  MULLCAPS ').location === 'Rack 3, shelf B' && js.partInfo('mullcaps').image === tiny && js.partInfo('mullcaps').updated_by === 'Ben');
+    js.savePartInfo('mullcaps', { location: 'Rack 4' }, 'Office', 'Ben');
+    check('changing only the location keeps the picture', js.partInfo('Mullcaps').location === 'Rack 4' && js.partInfo('Mullcaps').image === tiny);
+    check('the list says what is set without sending the pictures', JSON.stringify(js.partInfoList()) === JSON.stringify([{ key: 'mullcaps', location: 'Rack 4', image: true }]));
+    js.savePartInfo('Mullcaps', { image: '' }, 'Office', 'Ben');
+    check('a picture can be removed', js.partInfo('Mullcaps').image === '' && js.partInfo('Mullcaps').location === 'Rack 4');
+    check('something that is not a small picture is refused', throws(() => js.savePartInfo('Mullcaps', { image: 'data:text/html;base64,PHNjcmlwdD4=' }, 'Office', ''), 400) && throws(() => js.savePartInfo('Mullcaps', { image: 'javascript:alert(1)' }, 'Office', ''), 400) && throws(() => js.savePartInfo('Mullcaps', { image: 'data:image/jpeg;base64,' + 'A'.repeat(700000) }, 'Office', ''), 400));
+    check('a component needs a name', throws(() => js.savePartInfo('  ', { location: 'x' }, 'Office', ''), 400));
+    js.deletePartInfo('Mullcaps', 'Office', ''); check('it can be removed altogether', js.partInfo('Mullcaps').set === false && js.partInfoList().length === 0);
+  }
+
   // corrections: rework as a record, with minutes
   {
     const cd = js.createDoor({ number: '26-950', components: [] }, 'Office');

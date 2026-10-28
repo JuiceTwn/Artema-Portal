@@ -106,16 +106,76 @@
   window.Portal.jobs.assignStations = assignStations;
 
   // ---------- the order form's parts: what to cut, and what has been done to each ----------
+  /** What the expanded card tells you about the order, in the order a person reads it. */
+  const DETAIL_KEYS = ['frameOptions', 'size', 'series', 'ptype', 'swing', 'hinges', 'prepping', 'frame', 'jamb', 'sill', 'brickmold', 'extFinish', 'intFinish', 'frameOut', 'frameIn', 'paintFormula', 'glass', 'handle', 'hardware', 'po', 'orderNo'];
   const STAGE_SHORT = { cut: 'Cut', prep: 'Prep', filled: 'Filled', paintprep: 'Paint prep', painted: 'Painted', quality: 'Quality' };
-  function partsHtml(r) {
+  /** Same spelling rules as the server, so a part is found whichever way it was typed. */
+  const partKey = name => String(name || '').toLowerCase().replace(/[^a-z0-9/]+/g, ' ').trim().slice(0, 80);
+  function partsHtml(r, info) {
     if (!r.sections || !r.sections.length) return `<div class="faint">${esc(r.note || 'No parts found on the order form.')}</div>`;
-    return r.sections.map(sec => `<div class="pt-sec"><h4>${esc(sec.title || 'Parts')}</h4>${sec.parts.map(p => `<div class="pt-row"><span class="pt-n">${esc(p.name)}</span><span class="pt-l">${esc(p.length || '')}</span><span class="pt-q">× ${p.qty}</span><span class="pt-p" title="Paint numbers">${p.paint ? '#' + esc(p.paint) : ''}</span>
-      <span class="pt-d">${Object.keys(sec.parts[0].done).filter(k => k !== 'quality').map(k => `<i class="${p.done[k] ? 'on' : ''}">${esc(STAGE_SHORT[k] || k)}</i>`).join('')}</span></div>`).join('')}</div>`).join('');
+    return `<div class="pt-head">Parts and sizes <span>tap a part to see what it looks like and where it is</span></div>` + r.sections.map(sec => `<div class="pt-sec"><h4>${esc(sec.title || 'Parts')}</h4>${sec.parts.map(p => {
+      const pi = info[partKey(p.name.replace(/ \([^)]*\)$/, ''))] || info[partKey(p.name)];
+      return `<button class="pt-row" data-part="${esc(p.name.replace(/ \([^)]*\)$/, ''))}"><span class="pt-n">${esc(p.name)}${pi && pi.image ? '<em class="pt-ph" title="Has a picture">▣</em>' : ''}${pi && pi.location ? `<small>${esc(pi.location)}</small>` : ''}</span><span class="pt-l">${esc(p.length || '')}</span><span class="pt-q">× ${p.qty}</span><span class="pt-p" title="Paint numbers">${p.paint ? '#' + esc(p.paint) : ''}</span>
+        <span class="pt-d">${Object.keys(sec.parts[0].done).filter(k => k !== 'quality').map(k => `<i class="${p.done[k] ? 'on' : ''}">${esc(STAGE_SHORT[k] || k)}</i>`).join('')}</span></button>`;
+    }).join('')}</div>`).join('');
+  }
+
+  // ---------- what a component looks like, and where it is kept ----------
+  const canEditParts = () => !!(S.me && S.me.partsEdit);
+  /** A picture the office chose, shrunk to a small JPEG so it stays light to store and quick to show. */
+  function shrink(file, max = 900) {
+    return new Promise((res, rej) => {
+      const url = URL.createObjectURL(file), img = new Image();
+      img.onload = () => {
+        const k = Math.min(1, max / Math.max(img.width, img.height)), c = document.createElement('canvas');
+        c.width = Math.max(1, Math.round(img.width * k)); c.height = Math.max(1, Math.round(img.height * k));
+        const g = c.getContext('2d'); g.fillStyle = '#fff'; g.fillRect(0, 0, c.width, c.height); g.drawImage(img, 0, 0, c.width, c.height);
+        URL.revokeObjectURL(url);
+        let q = 0.85, out = c.toDataURL('image/jpeg', q);
+        while (out.length > 520000 && q > 0.4) { q -= 0.1; out = c.toDataURL('image/jpeg', q); }
+        out.length > 580000 ? rej(new Error('That picture is too big. Try a smaller one.')) : res(out);
+      };
+      img.onerror = () => { URL.revokeObjectURL(url); rej(new Error('That file is not a picture')); };
+      img.src = url;
+    });
+  }
+  /** The popup for one component: its picture and where it is. Admins and the office can change both from here. */
+  async function partDialog(name) {
+    let info; try { info = await api('jobs/partinfo?name=' + encodeURIComponent(name)); } catch (e) { toast(e.message, true); return; }
+    const edit = canEditParts();
+    const again = await K.modal({
+      title: name, ok: edit ? 'Edit' : 'Close', noCancel: !edit, wide: true,
+      html: `<div class="pi-view">${info.image ? `<img class="pi-img" src="${esc(info.image)}" alt="${esc(name)}">` : `<div class="pi-none">No picture yet${edit ? '. Tap Edit to add one.' : ''}</div>`}
+        <div class="pi-where"><i>Where it is</i><b>${info.location ? esc(info.location) : '<span class="faint">Not set</span>'}</b></div>
+        ${info.updated_at ? `<div class="faint pi-by">Updated ${esc(window.Portal.ago(info.updated_at).toLowerCase())}${info.updated_by ? ' by ' + esc(info.updated_by) : ''}</div>` : ''}</div>`,
+      collect: () => true,
+    });
+    if (again && edit) await editPartInfo(name, info);
+  }
+  async function editPartInfo(name, info) {
+    let image;          // undefined keeps the current one, '' removes it
+    const res = await K.modal({
+      title: `${name}: picture and place`, ok: 'Save', wide: true,
+      html: `<div class="pk-label">Where is it kept?</div><input class="field" id="pi-loc" maxlength="120" placeholder="Rack 3, shelf B" value="${esc(info.location || '')}" autocomplete="off">
+        <div class="pk-label">Picture</div><div class="pi-edit"><div id="pi-prev">${info.image ? `<img class="pi-img" src="${esc(info.image)}" alt="">` : '<div class="pi-none">No picture</div>'}</div>
+        <div class="pi-btns"><label class="btn">Choose a picture<input type="file" id="pi-file" accept="image/*" hidden></label><span class="faint">or paste one (Ctrl+V)</span>${info.image ? '<button type="button" class="btn danger" id="pi-rm">Remove picture</button>' : ''}</div></div>`,
+      mount: el => {
+        const show = url => { $('#pi-prev', el).innerHTML = url ? `<img class="pi-img" src="${url}" alt="">` : '<div class="pi-none">No picture</div>'; };
+        const take = async f => { try { image = await shrink(f); show(image); } catch (e) { toast(e.message, true); } };
+        $('#pi-file', el).onchange = e => { if (e.target.files[0]) take(e.target.files[0]); };
+        const rm = $('#pi-rm', el); if (rm) rm.onclick = () => { image = ''; show(''); };
+        el.closest('dialog').addEventListener('paste', e => { const f = [...(e.clipboardData && e.clipboardData.files || [])].find(x => x.type.startsWith('image/')); if (f) { e.preventDefault(); take(f); } });
+      },
+      collect: el => ({ location: $('#pi-loc', el).value.trim() }),
+    });
+    if (!res) return;
+    try { await K.post('partinfo/save', { name, location: res.location, ...(image !== undefined ? { image } : {}) }); S.partInfoMap = null; toast(`${name}: saved`); S.stationSnap = ''; redraw(); } catch (e) { toast(e.message, true); }
   }
 
   // ---------- the queue ----------
   function render(cfg, chosen) {
     const host = $('#station');
+    S.stationOpen = S.stationOpen || new Set();
     const byDoor = new Map();
     for (const v of chosen) for (const d of waiting(v, cfg)) { const e = byDoor.get(d.id) || { d, tabs: [], fields: [], texts: [] }; e.tabs.push(v); for (const f of stationFields(v, cfg)) if (!e.fields.includes(f)) e.fields.push(f); for (const f of textFields(v, cfg)) if (!e.texts.includes(f)) e.texts.push(f); byDoor.set(d.id, e); }
     const key = d => (d.shipDate && /^\d{4}-\d{2}-\d{2}$/.test(d.shipDate) ? d.shipDate : '9999');
@@ -125,7 +185,6 @@
     const colourOf = d => { const f = d.form || {}; return [...new Set([f.extFinish, f.intFinish, f.frameOut, f.frameIn].filter(Boolean))].join(' / ') || 'No colour on the order form'; };
     const open = [...byDoor.values()].sort((a, b) => (byColour ? colourOf(a.d).localeCompare(colourOf(b.d)) : 0) || key(a.d).localeCompare(key(b.d)) || K.nat(a.d.number, b.d.number));
     const seen = seenIds(open.map(e => e.d)), att = open.filter(e => stuck(e.d, e.fields)).length;
-    const forms = [...new Set(chosen.flatMap(v => v.cols.filter(k => k.startsWith('f:'))))].map(k => K.FORM && K.FORM[k.slice(2)]).filter(Boolean).slice(0, 3);
     const doneDoors = chosen.flatMap(v => cfg.doors.filter(d => K.atTab(d, v, cfg) && finished(d, stationFields(v, cfg))));
 
     const card = (e, i) => {
@@ -138,18 +197,24 @@
           ${doneLabel && !isDone ? `<button class="st-done" data-done="${f.id}" data-label="${doneLabel.id}">${icon('check')}${esc(doneLabel.name)}</button>` : isDone ? `<span class="st-ok">${icon('check')}</span>` : ''}</div>`;
       }).join('');
       const trows = (e.texts || []).map(f => { const v = (d.cells[f.id] || {}).value || ''; return `<div class="st-row"><span class="st-fn">${esc(f.name)}</span><button class="st-cur st-text${v ? '' : ' blank'}" data-pick="${f.id}">${esc(v || 'Set')}</button></div>`; }).join('');
-      const info = forms.map(([name, fn]) => { const v = d.form ? fn(d.form) : ''; return v ? `<span><i>${esc(name)}</i>${esc(v)}</span>` : ''; }).join('');
-      return `<article class="st-card${i === 0 ? ' first' : ''}${stuck(d, fields) ? ' stuck' : ''}" data-id="${d.id}">
-        <div class="st-top">${i === 0 ? '<span class="st-next">NEXT UP</span>' : ''}${isNew ? '<span class="st-new">NEW</span>' : ''}
+      const cart = (e.texts || []).map(f => (d.cells[f.id] || {}).value).find(Boolean);
+      const details = DETAIL_KEYS.map(k => { const fm = K.FORM && K.FORM[k]; const v = fm && d.form ? fm[1](d.form) : ''; return v ? `<span><i>${esc(fm[0])}</i>${esc(v)}</span>` : ''; }).join('');
+      const open = S.stationOpen.has(String(d.id));
+      return `<article class="st-card${i === 0 ? ' first' : ''}${stuck(d, fields) ? ' stuck' : ''}${open ? ' open' : ''}" data-id="${d.id}">
+        <div class="st-top" role="button" tabindex="0" aria-expanded="${open}" title="Tap to see the order, notes and parts">${i === 0 ? '<span class="st-next">NEXT UP</span>' : ''}${isNew ? '<span class="st-new">NEW</span>' : ''}
           <b class="st-num">${esc(d.number)}</b><span class="st-cust">${esc(d.customer || '')}</span>
-          <span class="due ${due.cls}">${esc(K.dueText(d.shipDate))}</span></div>
-        ${info ? `<div class="st-info">${info}</div>` : ''}
-        ${d.notes ? `<div class="st-note">${esc(d.notes)}</div>` : ''}
-        ${d.form && d.form.orderNotes ? `<div class="st-onotes"><i>From the order form</i>${esc(d.form.orderNotes)}</div>` : ''}
-        <div class="st-rows">${rows || '<div class="faint">This station has no status column. Ask an admin to add one.</div>'}${trows}</div>
-        <div class="st-links"><button class="link" data-parts="${d.id}">Parts and sizes ▾</button><button class="link" data-fix="${d.id}">Log a correction</button></div>
-        <div class="st-parts" id="parts-${d.id}" hidden></div>
-        <div class="st-foot"><button class="st-stuck" data-stuck="${d.id}">${icon('alert')}Stuck</button><button class="st-more" data-open="${d.id}">Details</button></div>
+          ${d.form && d.form.orderNotes ? `<span class="st-badge" title="This order has notes">${icon('alert')}Notes</span>` : ''}${cart ? `<span class="st-badge cart">Cart ${esc(cart)}</span>` : ''}
+          <span class="due ${due.cls}">${esc(K.dueText(d.shipDate))}</span><span class="st-chev" aria-hidden="true"></span></div>
+        <div class="st-rows">${rows || '<div class="faint">This station has no status column. Ask an admin to add one.</div>'}</div>
+        <div class="st-foot"><button class="st-stuck" data-stuck="${d.id}">${icon('alert')}Stuck</button></div>
+        <div class="st-detail">
+          ${details ? `<div class="st-info">${details}</div>` : ''}
+          ${d.form && d.form.orderNotes ? `<div class="st-onotes"><i>From the order form</i>${esc(d.form.orderNotes)}</div>` : ''}
+          ${d.notes ? `<div class="st-note">${esc(d.notes)}</div>` : ''}
+          ${trows ? `<div class="st-rows">${trows}</div>` : ''}
+          <div class="st-parts" id="parts-${d.id}"></div>
+          <div class="st-links"><button class="link" data-fix="${d.id}">Log a correction</button><button class="link" data-open="${d.id}">Everything about this door</button></div>
+        </div>
       </article>`;
     };
     const doneList = S.stationShowDone ? doneDoors.map(d => `<span class="st-chip">${esc(d.number)}</span>`).join('') : '';
@@ -164,17 +229,28 @@
     if ($('#st-colour')) $('#st-colour').onclick = () => { K.store.set('artema.st.colour', byColour ? '0' : '1'); redraw(); };
     const stationName = chosen.map(v => v.name).join(' + ');
     $$('#station [data-fix]').forEach(b => b.onclick = () => { const d = byDoor.get(Number(b.dataset.fix)).d; markSeen(d.id); K.logCorrection(d, stationName); });
-    S.stationParts = S.stationParts || new Set();
-    const openParts = async (id, on) => {
-      const host = $('#parts-' + id), btn = $(`[data-parts="${id}"]`); if (!host) return;
-      if (!on) { host.hidden = true; if (btn) btn.textContent = 'Parts and sizes ▾'; S.stationParts.delete(id); return; }
-      S.stationParts.add(id); host.hidden = false; if (btn) btn.textContent = 'Parts and sizes ▴'; host.innerHTML = '<div class="faint">Reading the order form…</div>';
-      try { host.innerHTML = partsHtml(await api('jobs/parts?id=' + id)); } catch (e) { host.innerHTML = `<div class="faint">${esc(e.message)}</div>`; }
+    // a card is compact; tapping its top opens it in place into the full description
+    const loadParts = async id => {
+      const host = $('#parts-' + id); if (!host || host.dataset.loaded === '1') return;
+      host.innerHTML = '<div class="faint">Reading the order form…</div>';
+      try {
+        if (!S.partInfoMap) { S.partInfoMap = {}; for (const x of (await api('jobs/partinfo/list')).items) S.partInfoMap[x.key] = x; }
+        host.innerHTML = partsHtml(await api('jobs/parts?id=' + id), S.partInfoMap); host.dataset.loaded = '1';
+        $$('[data-part]', host).forEach(b => b.onclick = () => partDialog(b.dataset.part));
+      } catch (e) { host.innerHTML = `<div class="faint">${esc(e.message)}</div>`; }
     };
-    $$('#station [data-parts]').forEach(b => b.onclick = () => openParts(b.dataset.parts, !S.stationParts.has(b.dataset.parts)));
-    for (const id of S.stationParts) openParts(id, true);
-    const sd = $('#st-done'); if (sd) sd.onclick = () => { S.stationShowDone = !S.stationShowDone; redraw(); };
-    const door = id => cfg.doors.find(x => String(x.id) === String(id));
+    const toggle = card => {
+      const id = card.dataset.id, on = !card.classList.contains('open');
+      card.classList.toggle('open', on); $('.st-top', card).setAttribute('aria-expanded', on);
+      on ? S.stationOpen.add(id) : S.stationOpen.delete(id);
+      if (on) { markSeen(id); loadParts(id); }
+    };
+    $$('#station .st-card').forEach(card => {
+      const top = $('.st-top', card);
+      top.onclick = e => { if (!e.target.closest('button')) toggle(card); };
+      top.onkeydown = e => { if ((e.key === 'Enter' || e.key === ' ') && e.target === top) { e.preventDefault(); toggle(card); } };
+      if (S.stationOpen.has(card.dataset.id)) loadParts(card.dataset.id);
+    });
     $$('#station [data-open]').forEach(b => b.onclick = () => { markSeen(b.dataset.open); K.openDoor(b.dataset.open); });
     $$('#station [data-pick]').forEach(b => b.onclick = () => {
       const id = b.closest('.st-card').dataset.id; markSeen(id);

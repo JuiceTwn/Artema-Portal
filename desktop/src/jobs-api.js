@@ -51,6 +51,8 @@ function get(jobs, orders, ep, q) {
     if (ep === 'jobs/board') return { ...jobs.config(), doors: withForms(orders, jobs.board(q.archived === '1' ? 'archived' : 'active')) };
     if (ep === 'jobs/queue') { const r = jobs.queue(str(q.dept)); return { ...r, work: withForms(orders, r.work) }; }
     if (ep === 'jobs/door') { const door = jobs.door(str(q.id)); return { door, events: jobs.events(40, door.id), comments: jobs.comments(door.id), corrections: jobs.corrections(door.id), ...jobs.config() }; }
+    if (ep === 'jobs/partinfo') return jobs.partInfo(str(q.name));
+    if (ep === 'jobs/partinfo/list') return { items: jobs.partInfoList() };
     if (ep === 'jobs/corrections') return jobs.correctionSummary(Number(q.days) || 30);
     if (ep === 'jobs/parts') {
       const door = jobs.door(str(q.id)), rel = String(door.sourcePath || '').replace(/^Door Orders\//, '');
@@ -67,8 +69,8 @@ function get(jobs, orders, ep, q) {
   });
 }
 
-/** Handles a POST; returns the JSON to send. `orders` reads the order forms. */
-function post(jobs, orders, ep, b, need = () => { }) {
+/** Handles a POST; returns the JSON to send. `orders` reads the order forms. `ctx.office` says the computer was put in the Office department by an admin. */
+function post(jobs, orders, ep, b, need = () => { }, ctx = {}) {
   if (!jobs || !jobs.ok) throw new HttpError(503, 'Jobs are unavailable right now. Ask whoever looks after the Portal.');
   const dept = str(b.dept), who = str(b.who);
   const withDoor = id => ({ ok: true, door: jobs.door(id) });
@@ -115,6 +117,11 @@ function post(jobs, orders, ep, b, need = () => { }) {
       if (ep === 'jobs/template') return { ok: true, ...jobs.applyDoorShopTemplate(dept, who) };
       if (ep === 'jobs/rules/save') { jobs.saveRules(b.rules, dept, who); return { ok: true }; }
       if (ep === 'jobs/settings') { if (typeof b.guided === 'boolean') jobs.setGuided(b.guided, dept, who); return { ok: true, ...jobs.settings() }; }
+    }
+    if (ep === 'jobs/partinfo/save' || ep === 'jobs/partinfo/delete') {
+      if (!ctx.office) need('parts.info');          // admins, or a computer an admin has put in the Office department
+      if (ep === 'jobs/partinfo/delete') { jobs.deletePartInfo(str(b.name), dept, who); return { ok: true }; }
+      return { ok: true, info: jobs.savePartInfo(str(b.name), { location: b.location, image: b.image }, dept, who) };
     }
     if (ep === 'jobs/correction') { jobs.addCorrection(str(b.id), { reason: str(b.reason), minutes: b.minutes, note: str(b.note), station: str(b.station) }, dept, who); return withDoor(str(b.id)); }
     if (ep === 'jobs/catchup') {

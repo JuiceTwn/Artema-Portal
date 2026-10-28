@@ -67,6 +67,19 @@ const mk = tag => {
     r = await call('host', 'GET', 'devices'); check('the list shows who has which', r.body.devices.find(d => d.id === ids.g).stations.join() === String(st0));
     check('clearing them leaves the computer with none', (await call('host', 'POST', 'devices/stations', { id: ids.g, stations: [] })).status === 200 && (await call(G, 'GET', 'me')).body.stations.length === 0);
 
+    // ---- what a component looks like and where it is kept: admins and the Office department, not the floor
+    r = await call(G, 'POST', 'jobs/partinfo/save', { name: 'Mullcaps', location: 'Rack 3', dept: 'Office' });
+    check('general cannot edit where a component is kept', r.status === 403, r);
+    check('...but can read it', (await call(G, 'GET', 'jobs/partinfo?name=Mullcaps')).status === 200);
+    check('the main computer can', (await call('host', 'POST', 'jobs/partinfo/save', { name: 'Mullcaps', location: 'Rack 3', dept: 'Office' })).status === 200);
+    check('general sees it', (await call(G, 'GET', 'jobs/partinfo?name=Mullcaps')).body.location === 'Rack 3');
+    check('a computer is told whether it may edit', (await call(G, 'GET', 'me')).body.partsEdit === false && (await call('host', 'GET', 'me')).body.partsEdit === true);
+    check('an admin has Office, so an admin computer may', (await call('host', 'POST', 'devices/role', { id: ids.a, role: 'admin' })).status === 200 && (await call(A, 'POST', 'jobs/partinfo/save', { name: 'Glass stop', location: 'Rack 9', dept: 'Office' })).status === 200);
+    check('a floor computer an admin has put in the Office department may too', (await call('host', 'POST', 'devices/department', { id: ids.g, dept: 'Office' })).status === 200 && (await call(G, 'POST', 'jobs/partinfo/save', { name: 'Glass stop', location: 'Rack 10', dept: 'Office' })).status === 200 && (await call(G, 'GET', 'me')).body.partsEdit === true);
+    check('…and not when it goes back to another department', (await call('host', 'POST', 'devices/department', { id: ids.g, dept: 'Paint' })).status === 200 && (await call(G, 'POST', 'jobs/partinfo/save', { name: 'Glass stop', location: 'x', dept: 'Office' })).status === 403);
+    check('a computer named for the office starts in Office, so it may', (await call(B, 'POST', 'jobs/partinfo/save', { name: 'Glass stop', location: 'y', dept: 'Office' })).status === 200);
+    await call('host', 'POST', 'devices/role', { id: ids.a, role: 'general' });
+
     // ---- the main computer promotes
     check('the main computer can make a computer admin', (await call('host', 'POST', 'devices/role', { id: ids.a, role: 'admin' })).status === 200);
     r = await call(A, 'GET', 'me'); check('the change applies on the very next request', r.body.role === 'admin', r);
