@@ -445,3 +445,21 @@ body.simple:not(.more) .side .dept-line { display: none; }
 .st-assign svg { width: 14px; height: 14px; flex: none; }
 .st-assign span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .st-assign:hover { border-style: solid; }
+
+/* ---------- portrait monitors (most of the shop's screens are turned on their side) ----------
+   A station computer gives the sidebar's width back to the work: the menu becomes a slim bar along the top, and each card
+   keeps Stuck / Details beside its status rows instead of under them, so more doors fit on the screen. */
+@media (orientation: portrait) and (min-width: 821px) {
+  body.simple .app, body.simple .app.has-detail { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr); }
+  body.simple .side { flex-direction: row; align-items: center; gap: 6px; padding: 10px 24px; border-right: 0; border-bottom: 1px solid var(--line); }
+  body.simple .brand { padding: 0 18px 0 0; }
+  body.simple .side .nav { width: auto; height: 48px; padding: 0 16px; }
+  body.simple .side .side-label, body.simple .side .quick, body.simple .side .dept-line, body.simple .side #who-text, body.simple .side #who-change { display: none; }
+  body.simple .side-foot { margin: 0 0 0 auto; padding: 0; border: 0; flex-direction: row; align-items: center; gap: 10px; }
+  body.simple .scroll { padding: 8px 28px 40px; }
+  #station .st-card { grid-template-columns: minmax(0, 1fr) auto; column-gap: 18px; row-gap: 10px; padding: 14px 18px; }
+  #station .st-card > .st-top, #station .st-card > .st-info, #station .st-card > .st-note { grid-column: 1 / -1; }
+  #station .st-card > .st-rows { grid-column: 1; }
+  #station .st-card > .st-foot { grid-column: 2; flex-direction: column; justify-content: flex-end; gap: 8px; }
+  #station .st-stuck, #station .st-more { min-height: 44px; min-width: 120px; justify-content: center; }
+}
