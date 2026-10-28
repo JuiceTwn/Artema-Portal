@@ -8,7 +8,7 @@
   "private": true,
   "scripts": {
     "start": "electron .",
-    "test": "node scripts/e2e.js && node scripts/e2e-cert.js && node scripts/e2e-edition.js && node scripts/e2e-roles.js && node scripts/e2e-update.js && node scripts/e2e-selfupdate.js && node scripts/e2e-orders.js && node scripts/e2e-jobs.js && node scripts/e2e-jobs-api.js",
+    "test": "node scripts/e2e.js && node scripts/e2e-cert.js && node scripts/e2e-edition.js && node scripts/e2e-roles.js && node scripts/e2e-update.js && node scripts/e2e-selfupdate.js && node scripts/e2e-orders.js && node scripts/e2e-jobs.js && node scripts/e2e-jobs-api.js && node scripts/e2e-rules.js",
     "dist": "node scripts/dist.js all",
     "dist:server": "node scripts/dist.js server",
     "dist:client": "node scripts/dist.js client",

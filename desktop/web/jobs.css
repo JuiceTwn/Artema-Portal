@@ -392,3 +392,17 @@ textarea.field:focus { border-color: var(--amber); }
 .st-chips { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 10px; }
 .st-chip { padding: 6px 12px; border-radius: 999px; background: rgba(251, 238, 223, .07); color: var(--muted); font-weight: 700; }
 @media (max-width: 640px) { .st-fn { flex-basis: 100%; } .st-num { font-size: 28px; } }
+
+/* ---------- Automations editor ---------- */
+.rl { border: 1px solid var(--line-strong); border-radius: 12px; padding: 12px; margin-bottom: 12px; display: grid; gap: 8px; }
+.rl.off { opacity: .6; }
+.rl-h { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.rl-h .field { flex: 1; min-width: 180px; }
+.rl-s { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.rl-s b { min-width: 44px; color: var(--amber-hi); }
+.rl-s select, #cz-station { min-height: 40px; max-width: 100%; border-radius: 10px; border: 1px solid var(--line-strong); background: var(--raise); color: var(--text); padding: 0 10px; font: inherit; }
+.rl-s .field { min-height: 40px; max-width: 100%; }
+#cz-station { width: 100%; margin-bottom: 8px; }
+.rl-say { font-size: 13px; color: var(--muted); border-top: 1px dashed var(--line); padding-top: 8px; }
+.rl-help { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; padding: 10px 12px; border-radius: 12px; background: rgba(204, 125, 20, .12); margin-bottom: 12px; font-size: 14px; }
+.empty-note { color: var(--muted); padding: 10px 0; }

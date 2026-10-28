@@ -39,8 +39,9 @@
     if (!view) { host.innerHTML = `<div class="empty"><div class="ring">${icon('board')}</div><h3>No stations yet</h3><div>An admin sets them up from the Board (Customize).</div></div>`; return; }
     const fields = stationFields(view, cfg), seen = seenSet(view, cfg.doors);
     const forms = view.cols.filter(k => k.startsWith('f:')).map(k => K.FORM && K.FORM[k.slice(2)]).filter(Boolean).slice(0, 3);
-    const open = cfg.doors.filter(d => !finished(d, fields));
-    const doneN = cfg.doors.length - open.length;
+    const here = cfg.doors.filter(d => K.atStation(d, view, cfg));          // a tab can show one station only
+    const open = here.filter(d => !finished(d, fields));
+    const doneN = here.length - open.length;
     const key = d => (d.shipDate && /^\d{4}-\d{2}-\d{2}$/.test(d.shipDate) ? d.shipDate : '9999');
     open.sort((a, b) => key(a).localeCompare(key(b)) || K.nat(a.number, b.number));
     const att = open.filter(d => stuck(d, fields)).length;
@@ -67,7 +68,7 @@
       </article>`;
     };
 
-    const doneList = S.stationShowDone ? cfg.doors.filter(d => finished(d, fields)).map(d => `<span class="st-chip">${esc(d.number)}</span>`).join('') : '';
+    const doneList = S.stationShowDone ? here.filter(d => finished(d, fields)).map(d => `<span class="st-chip">${esc(d.number)}</span>`).join('') : '';
     host.innerHTML = `<div class="st-head"><h1>Station</h1>
         <div class="st-sum">${open.length} to do${att ? ` · <b class="red">${att} stuck</b>` : ''}</div></div>
       <div class="st-tabs" role="tablist">${cfg.views.map(v => `<button class="${v.id === view.id ? 'on' : ''}" data-tab="${v.id}">${esc(v.name)}</button>`).join('')}</div>
@@ -85,18 +86,23 @@
       const f = cfg.fields.find(x => String(x.id) === b.dataset.pick), d = door(id);
       if (d && f) K.editCell(b, d, f, cfg);
     });
-    $$('#station [data-done]').forEach(b => b.onclick = () => setLabel(b, door(b.closest('.st-card').dataset.id), cfg.fields.find(x => String(x.id) === b.dataset.done), Number(b.dataset.label), view));
+    $$('#station [data-done]').forEach(b => b.onclick = () => setLabel(b, door(b.closest('.st-card').dataset.id), cfg.fields.find(x => String(x.id) === b.dataset.done), Number(b.dataset.label), view, cfg));
     $$('#station [data-stuck]').forEach(b => b.onclick = () => flagStuck(door(b.dataset.stuck), fields, view));
   }
 
-  /** One tap: set the status to its "done" label, with Undo for a few seconds. */
-  async function setLabel(btn, d, f, labelId, view) {
+  /** One tap: set the status to its "done" label. If a rule then moves the door on, say so; Undo takes back both. */
+  async function setLabel(btn, d, f, labelId, view, cfg) {
     if (!d || !f) return;
     const before = d.cells[f.id] && d.cells[f.id].label != null ? d.cells[f.id].label : null;
     markSeen(view, d.id);
     await K.act(btn, async () => {
-      await K.post('cell', { id: d.id, field: f.id, value: labelId });
-      K.undoToast(`${d.number}: ${f.name} done`, async () => { await K.post('cell', { id: d.id, field: f.id, value: before }); K.afterChange(); });
+      const res = await K.post('cell', { id: d.id, field: f.id, value: labelId }), auto = (res && res.auto) || [];
+      const name = (fid, lid) => { const fl = cfg.fields.find(x => x.id === fid); const l = fl && fl.labels.find(x => x.id === lid); return l ? l.name : ''; };
+      const moved = auto.filter(a => a.after !== null).map(a => `${a.name}: ${name(a.field, a.after)}`);
+      K.undoToast(`${d.number}: ${f.name} done${moved.length ? ' · ' + moved.join(', ') : ''}`, async () => {
+        await K.post('cells', { changes: [{ id: d.id, field: f.id, value: before }, ...auto.map(a => ({ id: a.door, field: a.field, value: a.before }))] });
+        K.afterChange();
+      });
     });
   }
 

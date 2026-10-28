@@ -82,9 +82,12 @@ function install(JobStore, { actor, text, bad, now }) {
         ...f, labels: labels.filter(l => l.field_id === f.id).map(l => ({ id: l.id, name: l.name, color: l.color, done: !!l.done, attn: !!l.attn })),
       }));
     },
-    views() { return this.need().prepare('SELECT id, name, cols FROM views ORDER BY position, id').all().map(v => ({ id: v.id, name: v.name, cols: JSON.parse(v.cols) })); },
+    views() {
+      const db = this.need(), have = new Set(db.prepare('SELECT id FROM labels').all().map(r => r.id));
+      return db.prepare('SELECT id, name, cols, station FROM views ORDER BY position, id').all().map(v => ({ id: v.id, name: v.name, cols: JSON.parse(v.cols), station: v.station !== null && have.has(v.station) ? v.station : null }));
+    },
     /** Everything a screen needs to draw the board's columns and tabs. */
-    config() { return { ...this.settings(), fields: this.fields(), views: this.views(), palette: PALETTE }; },
+    config() { return { ...this.settings(), fields: this.fields(), views: this.views(), rules: this.rules(), palette: PALETTE }; },
 
     // ---- columns (admin)
     addField(name, kind, dept, who) {
@@ -168,13 +171,16 @@ function install(JobStore, { actor, text, bad, now }) {
           if (!cols.every(okCol)) throw bad('A tab has a column that does not exist');
           if (!cols.includes('door')) cols.unshift('door');          // every tab starts with the door
           if (v.id && !have.has(Number(v.id))) throw bad('No such tab', 404);
-          return { id: v.id ? Number(v.id) : 0, name, cols };
+          const was = v.id ? db.prepare('SELECT station FROM views WHERE id = ?').get(Number(v.id)) : null;
+          const st = v.station === undefined ? (was ? was.station : null) : v.station === null || v.station === '' ? null : Number(v.station);          // not sent: keep what is there
+          if (st !== null && !db.prepare('SELECT 1 FROM labels WHERE id = ?').get(st)) throw bad('A tab shows a station that does not exist');
+          return { id: v.id ? Number(v.id) : 0, name, cols, station: st };
         });
         const keep = new Set(clean.filter(v => v.id).map(v => v.id));
         for (const id of have) if (!keep.has(id)) db.prepare('DELETE FROM views WHERE id = ?').run(id);
         clean.forEach((v, i) => {
-          if (v.id) db.prepare('UPDATE views SET name = ?, cols = ?, position = ? WHERE id = ?').run(v.name, JSON.stringify(v.cols), i, v.id);
-          else db.prepare('INSERT INTO views (name, position, cols) VALUES (?, ?, ?)').run(v.name, i, JSON.stringify(v.cols));
+          if (v.id) db.prepare('UPDATE views SET name = ?, cols = ?, position = ?, station = ? WHERE id = ?').run(v.name, JSON.stringify(v.cols), i, v.station, v.id);
+          else db.prepare('INSERT INTO views (name, position, cols, station) VALUES (?, ?, ?, ?)').run(v.name, i, JSON.stringify(v.cols), v.station);
         });
         this.event(db, null, 'board.views.saved', d, who, { count: clean.length });
       });
@@ -188,28 +194,48 @@ function install(JobStore, { actor, text, bad, now }) {
     setCell(ref, fieldId, value, dept, who) {
       const d = actor(dept);
       return this.tx(db => {
-        const id = this.doorId(ref);
-        const f = db.prepare('SELECT id, name, kind FROM fields WHERE id = ?').get(Number(fieldId));
-        if (!f) throw bad('No such column', 404);
-        let label = null, val = '', shown = '';
-        if (f.kind === 'status') {
-          if (value !== null && value !== undefined && value !== '') {
-            const l = db.prepare('SELECT id, name FROM labels WHERE id = ? AND field_id = ?').get(Number(value), f.id);
-            if (!l) throw bad('That label is not in this column');
-            label = l.id; shown = l.name;
-          }
-        } else if (f.kind === 'date') {
-          val = String(value == null ? '' : value).trim();
-          if (val && !/^\d{4}-\d{2}-\d{2}$/.test(val)) throw bad('That is not a date');
-          if (val && Number.isNaN(Date.parse(val + 'T12:00:00'))) throw bad('That is not a date');
-          shown = val;
-        } else { val = text(value, 200); shown = val; }
-        const old = db.prepare('SELECT label_id, value FROM cells WHERE door_id = ? AND field_id = ?').get(id, f.id);
-        if ((old ? old.label_id : null) === label && (old ? old.value : '') === val) return;
-        if (label === null && val === '') db.prepare('DELETE FROM cells WHERE door_id = ? AND field_id = ?').run(id, f.id);
-        else db.prepare('INSERT INTO cells (door_id, field_id, label_id, value, at, dept) VALUES (?, ?, ?, ?, ?, ?) ON CONFLICT(door_id, field_id) DO UPDATE SET label_id = excluded.label_id, value = excluded.value, at = excluded.at, dept = excluded.dept')
-          .run(id, f.id, label, val, now(), d);
-        this.event(db, id, 'cell.set', d, who, { field: f.id, name: f.name, value: shown });
+        const ctx = this.ruleContext();
+        this.writeCell(db, this.doorId(ref), fieldId, value, d, who, ctx);
+        return ctx.auto;          // what the rules changed as a result, so the screen can offer one Undo for all of it
+      });
+    },
+    /**
+     * The inside of setCell, inside the caller's transaction. When something really changed, the rules that watch that cell run
+     * (rules.js). `ctx` carries the chain so a rule runs at most once per change; `by` is set when a rule is the one changing it.
+     */
+    writeCell(db, id, fieldId, value, d, who, ctx, by) {
+      const f = db.prepare('SELECT id, name, kind FROM fields WHERE id = ?').get(Number(fieldId));
+      if (!f) throw bad('No such column', 404);
+      let label = null, val = '', shown = '';
+      if (f.kind === 'status') {
+        if (value !== null && value !== undefined && value !== '') {
+          const l = db.prepare('SELECT id, name FROM labels WHERE id = ? AND field_id = ?').get(Number(value), f.id);
+          if (!l) throw bad('That label is not in this column');
+          label = l.id; shown = l.name;
+        }
+      } else if (f.kind === 'date') {
+        val = String(value == null ? '' : value).trim();
+        if (val && !/^\d{4}-\d{2}-\d{2}$/.test(val)) throw bad('That is not a date');
+        if (val && Number.isNaN(Date.parse(val + 'T12:00:00'))) throw bad('That is not a date');
+        shown = val;
+      } else { val = text(value, 200); shown = val; }
+      const old = db.prepare('SELECT label_id, value FROM cells WHERE door_id = ? AND field_id = ?').get(id, f.id);
+      if ((old ? old.label_id : null) === label && (old ? old.value : '') === val) return false;
+      if (label === null && val === '') db.prepare('DELETE FROM cells WHERE door_id = ? AND field_id = ?').run(id, f.id);
+      else db.prepare('INSERT INTO cells (door_id, field_id, label_id, value, at, dept) VALUES (?, ?, ?, ?, ?, ?) ON CONFLICT(door_id, field_id) DO UPDATE SET label_id = excluded.label_id, value = excluded.value, at = excluded.at, dept = excluded.dept')
+        .run(id, f.id, label, val, now(), d);
+      this.event(db, id, 'cell.set', d, who, by ? { field: f.id, name: f.name, value: shown, rule: by } : { field: f.id, name: f.name, value: shown });
+      if (by && ctx) ctx.auto.push({ door: id, field: f.id, name: f.name, before: old ? old.label_id : null, after: label, rule: by });
+      if (ctx && ctx.rules !== false && f.kind === 'status') this.runRules(db, id, { kind: 'cell', field: f.id, label }, ctx);
+      return true;
+    },
+    /** Puts several cells back exactly as given, without running any rules: the one Undo for a change and everything it set off. */
+    setCells(changes, dept, who) {
+      const d = actor(dept);
+      if (!Array.isArray(changes) || changes.length > 50) throw bad('Nothing to undo');
+      return this.tx(db => {
+        const ctx = { rules: false, auto: [] };
+        for (const c of changes) this.writeCell(db, this.doorId(c.id), c.field, c.value, d, who, ctx);
       });
     },
     /** { fieldId: { label, value } } for one door. */

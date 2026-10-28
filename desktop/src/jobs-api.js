@@ -86,17 +86,19 @@ function post(jobs, orders, ep, b, need = () => { }) {
       return { ok: true, added, skipped };
     }
     // ---- what the floor does all day: set a cell, comment, archive
-    if (ep === 'jobs/cell') { jobs.setCell(str(b.id), b.field, b.value, dept, who); return withDoor(str(b.id)); }
+    if (ep === 'jobs/cell') { const auto = jobs.setCell(str(b.id), b.field, b.value, dept, who); return { ...withDoor(str(b.id)), auto }; }
+    if (ep === 'jobs/cells') { jobs.setCells(Array.isArray(b.changes) ? b.changes : [], dept, who); return { ok: true }; }
     if (ep === 'jobs/comment') { jobs.addComment(str(b.id), str(b.text), dept, who); return withDoor(str(b.id)); }
     if (ep === 'jobs/archive') { jobs.setArchived(str(b.id), b.on !== false, dept, who); return { ok: true }; }
     // ---- the board's setup is for admins
-    if (ep.startsWith('jobs/field/') || ep === 'jobs/labels/save' || ep === 'jobs/views/save' || ep === 'jobs/settings') {
+    if (ep.startsWith('jobs/field/') || ep === 'jobs/labels/save' || ep === 'jobs/views/save' || ep === 'jobs/rules/save' || ep === 'jobs/settings') {
       need('board.edit');
       if (ep === 'jobs/field/add') return { ok: true, id: jobs.addField(str(b.name), str(b.kind), dept, who) };
       if (ep === 'jobs/field/rename') { jobs.renameField(b.id, str(b.name), dept, who); return { ok: true }; }
       if (ep === 'jobs/field/delete') { jobs.deleteField(b.id, dept, who); return { ok: true }; }
       if (ep === 'jobs/labels/save') { jobs.saveLabels(b.field, b.labels, dept, who); return { ok: true }; }
       if (ep === 'jobs/views/save') { jobs.saveViews(b.views, dept, who); return { ok: true }; }
+      if (ep === 'jobs/rules/save') { jobs.saveRules(b.rules, dept, who); return { ok: true }; }
       if (ep === 'jobs/settings') { if (typeof b.guided === 'boolean') jobs.setGuided(b.guided, dept, who); return { ok: true, ...jobs.settings() }; }
     }
     if (ep === 'jobs/note') { jobs.setNote(str(b.id), str(b.note), dept, who); return withDoor(str(b.id)); }

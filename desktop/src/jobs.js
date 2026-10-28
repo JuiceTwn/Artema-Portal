@@ -25,7 +25,7 @@ const { STEPS, STEP_KEYS, stepOf, COMPONENT_KINDS, NEEDED_BEFORE, DEFAULT_CHECKS
 const ACTORS = [...FLOW_DEPARTMENTS, 'Skins', 'Panel Assembly', 'Rail & Stile', 'Office'];
 const SOURCE_KINDS = ['internal', 'external'];
 
-const SCHEMA_VERSION = 2;
+const SCHEMA_VERSION = 3;
 const MIGRATIONS = {
   1: `
     CREATE TABLE projects (
@@ -145,6 +145,17 @@ const MIGRATIONS = {
     CREATE INDEX comments_door ON comments(door_id, id);
     ALTER TABLE doors ADD COLUMN archived_at INTEGER;
   `,
+  // automations (rules.js) and tabs that show only the doors at one station
+  3: `
+    CREATE TABLE rules (
+      id       INTEGER PRIMARY KEY AUTOINCREMENT,
+      name     TEXT    NOT NULL,
+      position INTEGER NOT NULL,
+      enabled  INTEGER NOT NULL DEFAULT 1,
+      rule     TEXT    NOT NULL
+    );
+    ALTER TABLE views ADD COLUMN station INTEGER;
+  `,
 };
 
 const now = () => Math.floor(Date.now() / 1000);
@@ -259,6 +270,7 @@ class JobStore {
       for (const c of comps) db.prepare('INSERT INTO components (door_id, kind, source_kind, source, expected_at) VALUES (?, ?, ?, ?, ?)').run(id, c.kind, c.sourceKind, c.source, c.expectedAt);
       for (const item of checks) db.prepare('INSERT INTO checks (door_id, item) VALUES (?, ?)').run(id, item);
       this.event(db, id, 'door.created', 'Office', by, { number, project: pn });
+      this.runRules(db, id, { kind: 'added' }, this.ruleContext());
       return id;
     });
   }
@@ -533,5 +545,6 @@ class JobStore {
 }
 
 require('./columns').install(JobStore, { actor, text, bad, now });
+require('./rules').install(JobStore, { actor, text, bad, now });
 
 module.exports = { JobStore, ACTORS, STEPS };
