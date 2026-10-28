@@ -484,3 +484,23 @@ body.simple:not(.more) .side .dept-line { display: none; }
 }
 #station .st-onotes { padding: 8px 12px; border-radius: 10px; background: rgba(204, 125, 20, .12); border-left: 4px solid var(--amber); font-size: 15px; white-space: pre-line; overflow-wrap: anywhere; }
 #station .st-onotes i { display: block; font-style: normal; font-size: 11px; letter-spacing: .1em; text-transform: uppercase; color: var(--amber-hi); margin-bottom: 2px; }
+
+/* ---------- station card extras: parts and sizes, corrections, group by colour ---------- */
+#station .st-links { display: flex; gap: 18px; flex-wrap: wrap; }
+#station .st-links .link { font-size: 14px; }
+#station .st-parts { padding: 8px 12px; border-radius: 10px; background: rgba(251, 238, 223, .05); display: grid; gap: 10px; }
+.pt-sec h4 { margin: 0 0 4px; font-size: 12px; letter-spacing: .1em; text-transform: uppercase; color: var(--amber-hi); }
+.pt-row { display: grid; grid-template-columns: minmax(150px, 2fr) 100px 46px 70px max-content; gap: 10px; align-items: center; padding: 3px 0; font-size: 15px; border-top: 1px solid var(--line); }
+.pt-n { font-weight: 600; } .pt-l { font-variant-numeric: tabular-nums; } .pt-q { color: var(--muted); } .pt-p { color: var(--faint); font-size: 12px; }
+.pt-d { display: flex; gap: 4px; justify-self: end; }
+.pt-d i { font-style: normal; font-size: 11px; padding: 2px 7px; border-radius: 999px; background: rgba(251, 238, 223, .07); color: var(--faint); }
+.pt-d i.on { background: rgba(95, 208, 139, .2); color: var(--ok); }
+#station .st-group { display: flex; justify-content: space-between; align-items: baseline; padding: 10px 4px 2px; border-bottom: 2px solid var(--amber); font-size: 15px; }
+#station .st-group span { color: var(--muted); font-size: 13px; }
+.st-switch.on { background: rgba(204, 125, 20, .2); border-color: var(--amber); color: var(--text); }
+.grow { flex: 1; }
+.cu-list, .fix-list { list-style: none; margin: 8px 0 0; padding: 0; display: grid; gap: 8px; }
+.cu-list li, .fix-list li { padding: 8px 12px; border-radius: 10px; background: rgba(251, 238, 223, .05); display: grid; gap: 2px; }
+.cu-list li span, .fix-list li span { font-size: 13px; color: var(--muted); }
+.cu-list li.was { opacity: .55; }
+@media (orientation: portrait) and (min-width: 821px) { #station .st-card > .st-links, #station .st-card > .st-parts { grid-column: 1 / -1; } }

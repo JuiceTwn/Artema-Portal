@@ -7,7 +7,7 @@
  * The tracks are set up by the starter (template.js) and stored under meta 'needs'. With no tracks, none of this does anything.
  */
 const NOT_NEEDED = 'Not needed';
-const DEFAULT_NEEDS = { frame: true, panel: true, rs: false };
+const DEFAULT_NEEDS = { frame: true, panel: true, rs: false, glass: true };
 
 function install(JobStore, { actor, bad }) {
   Object.assign(JobStore.prototype, {
@@ -26,7 +26,8 @@ function install(JobStore, { actor, bad }) {
     applyNeeds(db, doorId, needs) {
       const cfg = this.needsConfig();
       if (!cfg) return;
-      const want = { ...DEFAULT_NEEDS, ...(this.needsOf(doorId) || {}), ...(needs || {}) };
+      const stored = Object.fromEntries(db.prepare('SELECT key, needed FROM door_needs WHERE door_id = ?').all(doorId).map(r => [r.key, !!r.needed]));          // only what was really chosen
+      const want = { ...DEFAULT_NEEDS, ...stored, ...(needs || {}) };
       const ctx = { rules: false, auto: [] };          // choosing what a door needs is not a change the rules should react to
       const info = fid => ({ nn: (db.prepare('SELECT id FROM labels WHERE field_id = ? AND name = ? COLLATE NOCASE').get(fid, NOT_NEEDED) || {}).id,
         cur: db.prepare('SELECT c.label_id AS id, l.done AS done FROM cells c LEFT JOIN labels l ON l.id = c.label_id WHERE c.door_id = ? AND c.field_id = ?').get(doorId, fid) });
@@ -42,12 +43,12 @@ function install(JobStore, { actor, bad }) {
       const cuts = cfg.tracks.some(t => t.cuts && want[t.key]);
       for (const f of cfg.cutting) set(f, cuts);
     },
-    /** What a door needs now: { frame, panel, rs } (null when there are no tracks). A door with nothing recorded needs everything. */
+    /** What a door needs now: { frame, panel, rs } (null when there are no tracks). A door with nothing recorded gets the shop's defaults (everything except rail & stile) until someone says otherwise. */
     needsOf(doorId) {
       const cfg = this.needsConfig();
       if (!cfg) return null;
       const rows = new Map(this.need().prepare('SELECT key, needed FROM door_needs WHERE door_id = ?').all(doorId).map(r => [r.key, !!r.needed]));
-      return Object.fromEntries(cfg.tracks.map(t => [t.key, rows.has(t.key) ? rows.get(t.key) : true]));
+      return Object.fromEntries(cfg.tracks.map(t => [t.key, rows.has(t.key) ? rows.get(t.key) : DEFAULT_NEEDS[t.key] !== false]));
     },
     setNeeds(ref, needs, dept, who) {
       const d = actor(dept);

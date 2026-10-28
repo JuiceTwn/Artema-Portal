@@ -25,7 +25,7 @@ const { STEPS, STEP_KEYS, stepOf, COMPONENT_KINDS, NEEDED_BEFORE, DEFAULT_CHECKS
 const ACTORS = [...FLOW_DEPARTMENTS, 'Skins', 'Panel Assembly', 'Rail & Stile', 'Office'];
 const SOURCE_KINDS = ['internal', 'external'];
 
-const SCHEMA_VERSION = 5;
+const SCHEMA_VERSION = 6;
 const MIGRATIONS = {
   1: `
     CREATE TABLE projects (
@@ -170,6 +170,22 @@ const MIGRATIONS = {
       needed  INTEGER NOT NULL,
       PRIMARY KEY (door_id, key)
     ) WITHOUT ROWID;
+  `,
+  // corrections: what was fixed on a door, by whom, and how many minutes it took (corrections.js)
+  6: `
+    CREATE TABLE corrections (
+      id      INTEGER PRIMARY KEY AUTOINCREMENT,
+      door_id INTEGER NOT NULL REFERENCES doors(id) ON DELETE CASCADE,
+      at      INTEGER NOT NULL,
+      dept    TEXT    NOT NULL,
+      who     TEXT    NOT NULL DEFAULT '',
+      station TEXT    NOT NULL DEFAULT '',
+      reason  TEXT    NOT NULL,
+      minutes INTEGER NOT NULL DEFAULT 0,
+      note    TEXT    NOT NULL DEFAULT ''
+    );
+    CREATE INDEX corrections_door ON corrections(door_id, id);
+    CREATE INDEX corrections_at ON corrections(at);
   `,
 };
 
@@ -564,5 +580,7 @@ require('./columns').install(JobStore, { actor, text, bad, now });
 require('./rules').install(JobStore, { actor, text, bad, now });
 require('./template').install(JobStore, { actor, bad });
 require('./needs').install(JobStore, { actor, bad });
+require('./corrections').install(JobStore, { actor, text, bad, now });
+require('./catchup').install(JobStore);
 
 module.exports = { JobStore, ACTORS, STEPS };

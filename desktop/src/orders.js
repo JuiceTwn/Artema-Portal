@@ -46,7 +46,7 @@ const FIELDS = {
   frameOut: ['Frame colour out'], frameIn: ['Frame colour in'], weather: ['Weatherstrip Colour'], strike: ['Strike Finish'],
   // glass and hardware
   glassSize: ['Main Door glass size'], glassStyle: ['Glass style or code'], glassOptions: ['Glass options'], glassFrame: ['Glass frame type'],
-  sidelight: ['Sidelight type'], handleStyle: ['Handle style'], lever: ['Lever style'], handleFinish: ['Handle finish'], hardware: ['Hardware Options'],
+  sidelight: ['Sidelight type'], sidelightGlass: ['Sidelight glass size', { multi: true }], transomGlass: ['Transom Glass Size', { multi: true }], paintFormula: ['Mixed in House / Formula #'], handleStyle: ['Handle style'], lever: ['Lever style'], handleFinish: ['Handle finish'], hardware: ['Hardware Options'],
 };
 
 const norm = s => clean(s).toLowerCase().replace(/[:?]+$/, '').trim();
@@ -100,6 +100,43 @@ function orderNotes(ws, idx, XLSX) {
     if (row.length) lines.push(row.join(' · '));
   }
   return lines.join('\n').slice(0, 800);
+}
+
+/** The value beside the n-th appearance (0 is the first) of a label that the form repeats, like "Panel type" for the door and then the sidelight. */
+function nthValue(ws, idx, label, n, XLSX) {
+  const at = (idx.get(norm(label)) || [])[n];
+  if (!at) return '';
+  for (let k = 1; k <= 3; k++) { const t = cellText(ws, at.r, at.c + k, XLSX); if (t && !isBlank(t)) return t; }
+  return '';
+}
+
+/**
+ * The Parts List tab: what to cut, and what has been done to each part. It is laid out in blocks, each starting with a row that has
+ * "Quantity" in column D and the stage names (Cut, Prep, Filled, Paint Prep, Painted, Quality) across F to K. Below it, a part has its
+ * name in A, length in C, quantity in D, paint numbers in E and "Done" or "-" per stage. Rows of FALSE are empty template rows.
+ */
+function partsList(wb, XLSX) {
+  const ws = wb.Sheets['Parts List'];
+  if (!ws || !ws['!ref']) return [];
+  const T = (r, c) => cellText(ws, r, c, XLSX), yes = t => /^done$/i.test(t);
+  const out = []; let cur = null, lastTitle = '';
+  for (let r = 0; r < 120; r++) {
+    const a = T(r, 0), d = T(r, 3);
+    if (/^quantity$/i.test(d)) {
+      const stages = {};
+      for (let c = 5; c <= 10; c++) { const h = T(r, c); if (h) stages[c] = h.toLowerCase().replace(/[^a-z]/g, ''); }
+      cur = { title: a && !/^false$/i.test(a) && a !== '-' ? a : lastTitle, stages, parts: [] }; out.push(cur); continue;
+    }
+    if (a && /(components|parts)$/i.test(a)) lastTitle = a;
+    if (!cur || !a || /^(false|-)$/i.test(a) || /^special notes/i.test(a)) continue;
+    const qty = parseFloat(d);
+    if (!(qty > 0)) { if (!/^type$/i.test(a) && !T(r, 5)) lastTitle = lastTitle; continue; }
+    const len = T(r, 2), part = { name: a, length: /^false$/i.test(len) ? '' : len, qty, paint: T(r, 4), done: {} };
+    const col = T(r, 1); if (col && !/^false$/i.test(col)) part.name = `${a} (${col})`;
+    for (const [c, key] of Object.entries(cur.stages)) part.done[key] = yes(T(r, +c));
+    cur.parts.push(part);
+  }
+  return out.filter(s => s.parts.length);
 }
 
 class Orders {
@@ -163,6 +200,7 @@ class Orders {
       const out = {};
       for (const [key, [label, opts]] of Object.entries(FIELDS)) { const v = valueOf(ws, idx, label, this.XLSX, opts); out[key] = isBlank(v) ? '' : v; }
       out.orderNotes = orderNotes(ws, idx, this.XLSX);
+      out.sidelightPanelType = nthValue(ws, idx, 'Panel type', 1, this.XLSX);          // the main panel's type is the first; the sidelight's is the second
       out.size = out.width || out.height ? `${out.width || '?'} × ${out.height || '?'}` : '';
       const door = valueOf(ws, idx, 'Door Number', this.XLSX);
       return { ...base, door: door && !isBlank(door) ? door : base.door, f: out };
@@ -178,6 +216,12 @@ class Orders {
   list() {
     this.ensureFolder();
     return this.files().map(f => this.summary(f)).sort((a, b) => String(a.door || a.name).localeCompare(String(b.door || b.name), undefined, { numeric: true }));
+  }
+
+  /** The Parts List of a form: [{ title, parts: [{ name, length, qty, paint, done: { cut, prep, filled, paintprep, painted, quality } }] }]. */
+  parts(rel) {
+    const { wb } = this.open(rel);
+    return partsList(wb, this.XLSX);
   }
 
   /** One sheet laid out like Excel shows it: its print area when it has one. Text only; the page builds the table. */

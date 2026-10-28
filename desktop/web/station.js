@@ -10,6 +10,7 @@
   /** The department a station records its changes under, when this computer has not chosen one (the portal's departments are fixed). */
   const DEPT_FOR = [[/rail & stile \(cliff\)/i, 'Rail & Stile'], [/cutting|cnc|frame filling|verification/i, 'Frame Prep'], [/paint/i, 'Paint'], [/assembly|wrapping|qc/i, 'Assembly'], [/shipping/i, 'Shipping'], [/panel/i, 'Office']];
 
+  const textFields = (view, cfg) => view.cols.filter(k => k[0] === '#').map(k => cfg.fields.find(f => '#' + f.id === k)).filter(f => f && f.kind === 'text');
   const labelOf = (f, d) => { const c = d.cells[f.id]; return c && c.label != null ? f.labels.find(l => l.id === c.label) || null : null; };
   const stationFields = (view, cfg) => view.cols.filter(k => k[0] === '#').map(k => cfg.fields.find(f => '#' + f.id === k)).filter(f => f && f.kind === 'status');
   /** A tab's work on a door is finished when every status column in the tab holds a "counts as done" label. */
@@ -104,13 +105,25 @@
   }
   window.Portal.jobs.assignStations = assignStations;
 
+  // ---------- the order form's parts: what to cut, and what has been done to each ----------
+  const STAGE_SHORT = { cut: 'Cut', prep: 'Prep', filled: 'Filled', paintprep: 'Paint prep', painted: 'Painted', quality: 'Quality' };
+  function partsHtml(r) {
+    if (!r.sections || !r.sections.length) return `<div class="faint">${esc(r.note || 'No parts found on the order form.')}</div>`;
+    return r.sections.map(sec => `<div class="pt-sec"><h4>${esc(sec.title || 'Parts')}</h4>${sec.parts.map(p => `<div class="pt-row"><span class="pt-n">${esc(p.name)}</span><span class="pt-l">${esc(p.length || '')}</span><span class="pt-q">× ${p.qty}</span><span class="pt-p" title="Paint numbers">${p.paint ? '#' + esc(p.paint) : ''}</span>
+      <span class="pt-d">${Object.keys(sec.parts[0].done).filter(k => k !== 'quality').map(k => `<i class="${p.done[k] ? 'on' : ''}">${esc(STAGE_SHORT[k] || k)}</i>`).join('')}</span></div>`).join('')}</div>`).join('');
+  }
+
   // ---------- the queue ----------
   function render(cfg, chosen) {
     const host = $('#station');
     const byDoor = new Map();
-    for (const v of chosen) for (const d of waiting(v, cfg)) { const e = byDoor.get(d.id) || { d, tabs: [], fields: [] }; e.tabs.push(v); for (const f of stationFields(v, cfg)) if (!e.fields.includes(f)) e.fields.push(f); byDoor.set(d.id, e); }
+    for (const v of chosen) for (const d of waiting(v, cfg)) { const e = byDoor.get(d.id) || { d, tabs: [], fields: [], texts: [] }; e.tabs.push(v); for (const f of stationFields(v, cfg)) if (!e.fields.includes(f)) e.fields.push(f); for (const f of textFields(v, cfg)) if (!e.texts.includes(f)) e.texts.push(f); byDoor.set(d.id, e); }
     const key = d => (d.shipDate && /^\d{4}-\d{2}-\d{2}$/.test(d.shipDate) ? d.shipDate : '9999');
-    const open = [...byDoor.values()].sort((a, b) => key(a.d).localeCompare(key(b.d)) || K.nat(a.d.number, b.d.number));
+    const paints = chosen.some(v => v.cols.some(k => ['f:extFinish', 'f:intFinish', 'f:frameOut', 'f:frameIn'].includes(k)));
+    const byColour = paints && K.store.get('artema.st.colour') === '1';
+    /** What a door is painted: the colours on its order form, so doors with the same colours can be done together (fewer changeovers). */
+    const colourOf = d => { const f = d.form || {}; return [...new Set([f.extFinish, f.intFinish, f.frameOut, f.frameIn].filter(Boolean))].join(' / ') || 'No colour on the order form'; };
+    const open = [...byDoor.values()].sort((a, b) => (byColour ? colourOf(a.d).localeCompare(colourOf(b.d)) : 0) || key(a.d).localeCompare(key(b.d)) || K.nat(a.d.number, b.d.number));
     const seen = seenIds(open.map(e => e.d)), att = open.filter(e => stuck(e.d, e.fields)).length;
     const forms = [...new Set(chosen.flatMap(v => v.cols.filter(k => k.startsWith('f:'))))].map(k => K.FORM && K.FORM[k.slice(2)]).filter(Boolean).slice(0, 3);
     const doneDoors = chosen.flatMap(v => cfg.doors.filter(d => K.atTab(d, v, cfg) && finished(d, stationFields(v, cfg))));
@@ -124,6 +137,7 @@
           <button class="st-cur${l ? '' : ' blank'}" data-pick="${f.id}"${l ? ` style="background:${hex};color:${K.inkOn(hex)}"` : ''}>${esc(l ? l.name : 'Not started')}</button>
           ${doneLabel && !isDone ? `<button class="st-done" data-done="${f.id}" data-label="${doneLabel.id}">${icon('check')}${esc(doneLabel.name)}</button>` : isDone ? `<span class="st-ok">${icon('check')}</span>` : ''}</div>`;
       }).join('');
+      const trows = (e.texts || []).map(f => { const v = (d.cells[f.id] || {}).value || ''; return `<div class="st-row"><span class="st-fn">${esc(f.name)}</span><button class="st-cur st-text${v ? '' : ' blank'}" data-pick="${f.id}">${esc(v || 'Set')}</button></div>`; }).join('');
       const info = forms.map(([name, fn]) => { const v = d.form ? fn(d.form) : ''; return v ? `<span><i>${esc(name)}</i>${esc(v)}</span>` : ''; }).join('');
       return `<article class="st-card${i === 0 ? ' first' : ''}${stuck(d, fields) ? ' stuck' : ''}" data-id="${d.id}">
         <div class="st-top">${i === 0 ? '<span class="st-next">NEXT UP</span>' : ''}${isNew ? '<span class="st-new">NEW</span>' : ''}
@@ -132,19 +146,33 @@
         ${info ? `<div class="st-info">${info}</div>` : ''}
         ${d.notes ? `<div class="st-note">${esc(d.notes)}</div>` : ''}
         ${d.form && d.form.orderNotes ? `<div class="st-onotes"><i>From the order form</i>${esc(d.form.orderNotes)}</div>` : ''}
-        <div class="st-rows">${rows || '<div class="faint">This station has no status column. Ask an admin to add one.</div>'}</div>
+        <div class="st-rows">${rows || '<div class="faint">This station has no status column. Ask an admin to add one.</div>'}${trows}</div>
+        <div class="st-links"><button class="link" data-parts="${d.id}">Parts and sizes ▾</button><button class="link" data-fix="${d.id}">Log a correction</button></div>
+        <div class="st-parts" id="parts-${d.id}" hidden></div>
         <div class="st-foot"><button class="st-stuck" data-stuck="${d.id}">${icon('alert')}Stuck</button><button class="st-more" data-open="${d.id}">Details</button></div>
       </article>`;
     };
     const doneList = S.stationShowDone ? doneDoors.map(d => `<span class="st-chip">${esc(d.number)}</span>`).join('') : '';
     host.innerHTML = `<div class="st-head"><div><h1>${esc(chosen.map(v => v.name).join(' + '))}</h1>
         <div class="st-sum">${open.length ? `${open.length} to do` : 'Nothing waiting'}${att ? ` · <b class="red">${att} stuck</b>` : ''}</div></div>
-        <button class="st-switch" id="st-switch">${icon('swap')}Switch</button></div>
-      ${open.length ? `<div class="st-list">${open.map(card).join('')}</div>`
+        <span class="grow"></span>${paints ? `<button class="st-switch${byColour ? ' on' : ''}" id="st-colour" aria-pressed="${byColour}">Group by colour</button>` : ''}<button class="st-switch" id="st-switch">${icon('swap')}Switch</button></div>
+      ${open.length ? `<div class="st-list">${open.map((e, i) => (byColour && (i === 0 || colourOf(open[i - 1].d) !== colourOf(e.d)) ? `<div class="st-group"><b>${esc(colourOf(e.d))}</b><span>${open.filter(x => colourOf(x.d) === colourOf(e.d)).length} door${open.filter(x => colourOf(x.d) === colourOf(e.d)).length === 1 ? '' : 's'}</span></div>` : '') + card(e, i)).join('')}</div>`
         : `<div class="empty"><div class="ring">${icon('check')}</div><h3>You're all caught up</h3><div>New doors show up here by themselves.</div></div>`}
       ${doneDoors.length ? `<button class="link st-donebtn" id="st-done">${S.stationShowDone ? 'Hide' : 'Show'} ${doneDoors.length} finished door${doneDoors.length === 1 ? '' : 's'}</button>${doneList ? `<div class="st-chips">${doneList}</div>` : ''}` : ''}`;
 
     $('#st-switch').onclick = () => { S.stationPicking = true; redraw(); };
+    if ($('#st-colour')) $('#st-colour').onclick = () => { K.store.set('artema.st.colour', byColour ? '0' : '1'); redraw(); };
+    const stationName = chosen.map(v => v.name).join(' + ');
+    $$('#station [data-fix]').forEach(b => b.onclick = () => { const d = byDoor.get(Number(b.dataset.fix)).d; markSeen(d.id); K.logCorrection(d, stationName); });
+    S.stationParts = S.stationParts || new Set();
+    const openParts = async (id, on) => {
+      const host = $('#parts-' + id), btn = $(`[data-parts="${id}"]`); if (!host) return;
+      if (!on) { host.hidden = true; if (btn) btn.textContent = 'Parts and sizes ▾'; S.stationParts.delete(id); return; }
+      S.stationParts.add(id); host.hidden = false; if (btn) btn.textContent = 'Parts and sizes ▴'; host.innerHTML = '<div class="faint">Reading the order form…</div>';
+      try { host.innerHTML = partsHtml(await api('jobs/parts?id=' + id)); } catch (e) { host.innerHTML = `<div class="faint">${esc(e.message)}</div>`; }
+    };
+    $$('#station [data-parts]').forEach(b => b.onclick = () => openParts(b.dataset.parts, !S.stationParts.has(b.dataset.parts)));
+    for (const id of S.stationParts) openParts(id, true);
     const sd = $('#st-done'); if (sd) sd.onclick = () => { S.stationShowDone = !S.stationShowDone; redraw(); };
     const door = id => cfg.doors.find(x => String(x.id) === String(id));
     $$('#station [data-open]').forEach(b => b.onclick = () => { markSeen(b.dataset.open); K.openDoor(b.dataset.open); });

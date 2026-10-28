@@ -367,19 +367,22 @@
     }).join('');
     const fieldsSec = fieldRows ? `<div class="dr-sec"><h3>Status</h3>${fieldRows}</div>` : '';
 
+    const fixes = data.corrections || [];
+    const fixSec = `<div class="dr-sec"><h3>Corrections${fixes.length ? ` (${fixes.length})` : ''}</h3>${fixes.length ? `<ul class="fix-list">${fixes.slice(0, 8).map(c => `<li><b>${esc(c.reason)}</b>${c.minutes ? ` · ${c.minutes} min` : ''}<span>${esc([c.station || c.dept, c.who, ago(c.at).toLowerCase()].filter(Boolean).join(' · '))}${c.note ? ' · ' + esc(c.note) : ''}</span></li>`).join('')}</ul>` : '<div class="dr-note">Nothing had to be fixed.</div>'}
+      <button class="btn full" id="dr-fix">${icon('wrench')}Log a correction</button></div>`;
     const needsSec = d.needs && data.needs ? `<div class="dr-sec"><h3>This door needs</h3><div class="needs">${data.needs.tracks.map(t => `<button class="need${d.needs[t.key] ? ' on' : ''}" data-need="${t.key}" aria-pressed="${!!d.needs[t.key]}">${icon(d.needs[t.key] ? 'check' : 'x')}${esc(t.name)}</button>`).join('')}</div><div class="dr-note">Switch off what is not being made, for example a replacement that is only a panel. Those steps are skipped.</div></div>` : '';
     const notes = `<div class="dr-sec"><h3>Notes</h3><textarea id="dr-note" class="field" rows="2" maxlength="500" placeholder="Anything the next person should know">${esc(d.notes || '')}</textarea></div>`;
     const comments = `<div class="dr-sec" id="dr-comments"><h3>Updates${data.comments.length ? ` (${data.comments.length})` : ''}</h3>
       ${data.comments.map(c => `<div class="cm"><div class="cm-h"><b>${esc(c.dept)}</b>${c.who ? ' · ' + esc(c.who) : ''}<i>${esc(ago(c.at))}</i></div><div class="cm-b">${esc(c.body)}</div></div>`).join('')}
       <textarea id="dr-comment" class="field" rows="2" maxlength="1000" placeholder="Write an update for everyone to see"></textarea>
       <button class="btn primary full" id="dr-post">Post update</button></div>`;
-    const actions = `<div class="actions">${flowActions}<div class="pair">${d.sourcePath ? `<button class="btn" id="dr-wo">${icon('door')}Order form</button>` : ''}<button class="btn" id="dr-arch">${d.archived ? 'Bring back to the board' : 'Archive this door'}</button></div></div>`;
+    const actions = `<div class="actions">${flowActions}${d.sourcePath && data.needs ? `<button class="btn full" id="dr-catchup">${icon('check')}Catch up from the order form</button>` : ''}<div class="pair">${d.sourcePath ? `<button class="btn" id="dr-wo">${icon('door')}Order form</button>` : ''}<button class="btn" id="dr-arch">${d.archived ? 'Bring back to the board' : 'Archive this door'}</button></div></div>`;
     const history = data.events.length ? `<details class="dr-hist"><summary>History</summary>${data.events.map(e => `<div class="hv"><span>${esc(evText(m, e))}</span><i>${esc(e.dept)} · ${esc(ago(e.at))}</i></div>`).join('')}</details>` : '';
 
     $('#detail-in').innerHTML = `<button class="close" id="d-close" aria-label="Close">${icon('x')}</button>
       <div class="dr-head"><span class="doorpill big">${esc(d.number)}</span><div><h2>${esc(d.customer || 'No customer')}</h2><div class="muted sm">${esc(projectLine(d))}${d.archived ? ' · Archived' : ''}</div></div></div>
       <div class="dr-due ${dueI.cls}">${esc(dueI.text)}</div>
-      ${needsSec}${fieldsSec}${comments}${notes}${flow}${actions}${history}`;
+      ${needsSec}${fieldsSec}${comments}${fixSec}${notes}${flow}${actions}${history}`;
     $('#app').classList.add('has-detail');
     const root = $('#detail-in');
     $('#d-close').onclick = () => { S.drawer = null; closeDetail(); };
@@ -390,6 +393,8 @@
     $$('[data-repair-done]', root).forEach(b => b.onclick = () => repairDone(b.dataset.repairDone, d.number, b));
     $$('[data-edit-field]', root).forEach(b => b.onclick = () => { const f = data.fields.find(x => String(x.id) === b.dataset.editField); window.Portal.jobs.kit.editCell(b, d, f, data); });
     $$('.needs [data-need]').forEach(b => b.onclick = () => act(b, () => post('needs', { id: d.id, needs: { ...d.needs, [b.dataset.need]: !d.needs[b.dataset.need] } })));
+    $('#dr-fix').onclick = () => logCorrection(d, '');
+    if ($('#dr-catchup')) $('#dr-catchup').onclick = () => catchUp(d);
     $('#dr-note').onblur = e => { const v = e.target.value.trim(); if (v !== (d.notes || '')) act(null, () => post('note', { id: d.id, note: v })); };
     $('#dr-post').onclick = () => { const t = $('#dr-comment').value.trim(); if (t) act($('#dr-post'), async () => { await post('comment', { id: d.id, text: t }); S.drawerScroll = 'comments'; }); else toast('Write something first', true); };
     $('#dr-arch').onclick = () => act($('#dr-arch'), async () => { await post('archive', { id: d.id, on: !d.archived }); toast(d.archived ? `${d.number} is back on the board` : `${d.number} archived`); S.drawer = null; closeDetail(); });
@@ -597,11 +602,50 @@
   }
   const startView = () => { paintDeptLine(); return 'board'; };
 
+  // ---------- corrections: something had to be fixed ----------
+  /** Asks what was fixed and how long it took, and records it on the door. `station` is where it happened (shown in the rework report). */
+  async function logCorrection(door, station) {
+    const m = await meta();
+    const MIN = [5, 10, 15, 30, 60];
+    const res = await modal({
+      title: `Fixed something on ${door.number}`, ok: 'Log it',
+      html: `<p>It takes a few seconds, and it is how the shop sees where rework comes from.</p>
+        <div class="pk-label">What was fixed?</div>${choiceHtml('why', (m.correctionReasons || []).map(r => [r, r]), '')}
+        <div class="pk-label">How long did it take?</div>${choiceHtml('min', MIN.map(x => [String(x), x + ' min']), '')}
+        <input class="field" id="cr-min" type="number" min="1" max="600" placeholder="or type minutes" autocomplete="off">
+        <input class="field" id="cr-note" placeholder="What exactly? (optional)" autocomplete="off" maxlength="300">`,
+      mount: wireChoices,
+      collect: el => {
+        const why = chosen(el, 'why'), typed = parseInt($('#cr-min', el).value, 10), min = typed > 0 ? typed : parseInt(chosen(el, 'min'), 10) || 0;
+        if (!why) { toast('Pick what was fixed', true); return undefined; }
+        return { reason: why, minutes: min, note: $('#cr-note', el).value.trim(), station: station || '' };
+      },
+    });
+    if (!res) return false;
+    try { await post('correction', { id: door.id, ...res }); toast(`${door.number}: logged${res.minutes ? ', ' + res.minutes + ' min' : ''}`); afterChange(); return true; } catch (e) { toast(e.message, true); return false; }
+  }
+
+  /** Shows what the order form's Parts List says is already done, and sets the door's statuses to match if the office agrees. */
+  async function catchUp(door) {
+    let plan; try { plan = await api('jobs/catchup?id=' + q(door.id)); } catch (e) { toast(e.message, true); return; }
+    const todo = plan.steps.filter(x => !x.already);
+    if (!plan.steps.length) { toast(plan.note || 'The order form shows nothing finished yet'); return; }
+    if (!todo.length) { toast('The board already shows everything the order form says is done'); return; }
+    const ok = await modal({
+      title: `Catch ${door.number} up`, ok: 'Set these',
+      html: `<p>The order form's Parts List says this much is already done. Setting it puts the door where the work really is.</p>
+        <ul class="cu-list">${plan.steps.map(x => `<li class="${x.already ? 'was' : ''}"><b>${esc(x.column)}</b> → ${esc(x.labelName)}<span>${esc(x.already ? 'already set' : x.why)}</span></li>`).join('')}</ul>`,
+      collect: () => true,
+    });
+    if (!ok) return;
+    await act(null, async () => { const r = await post('catchup', { id: door.id }); toast(`${door.number}: ${r.applied.length} step${r.applied.length === 1 ? '' : 's'} set`); });
+  }
+
   setInterval(() => { if (S.drawer && !document.hidden && !$('#dlg').open && !document.querySelector('dialog.pick[open]')) drawDoor(S.drawer, false); }, 3000);
   window.Portal.jobs = {
     addForms, openDoor: (ref, o) => openDoor(ref, o).catch(e => toast(e.message, true)), homeLine, startView,
     kit: { store, post, modal, choiceHtml, wireChoices, chosen, ensureDept, chooseDept, myDept, dcol, due, dueText, inkOn, density, densityBar, wireDensity, nat, both, doorCol, custCol, dueCell, filesCol, notesCol,
-      stageCol, nextCol, flagsCol, tableHtml, sortRows, wireTable, editText, editing, afterChange, meta, resetMeta, applyGuided, openDoor, act, undoToast, icon },
+      stageCol, nextCol, flagsCol, tableHtml, sortRows, wireTable, editText, editing, afterChange, meta, resetMeta, applyGuided, openDoor, act, undoToast, icon, logCorrection, catchUp },
   };
   paintDeptLine();
 })();

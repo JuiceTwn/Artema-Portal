@@ -16,7 +16,7 @@
     frame: ['Frame', f => K.both(f.frameType, f.doorFrame)], jamb: ['Jamb', f => f.jamb], sill: ['Sill', f => K.both(f.sillType, f.sillDepth)], brickmold: ['Brickmold', f => K.both(f.brickSize, f.brickType)],
     extFinish: ['Panel out', f => f.extFinish], intFinish: ['Panel in', f => f.intFinish], frameOut: ['Frame out', f => f.frameOut], frameIn: ['Frame in', f => f.frameIn],
     sillColour: ['Sill colour', f => f.sillColour], hingeFinish: ['Hinge finish', f => f.hingeFinish], glass: ['Glass', f => K.both(f.glassSize, f.glassStyle)],
-    handle: ['Handle', f => K.both(f.handleStyle, f.lever)], hardware: ['Hardware', f => f.hardware], po: ['PO', f => f.po], orderNo: ['Order #', f => f.orderNo], tag: ['Project name', f => f.project],
+    handle: ['Handle', f => K.both(f.handleStyle, f.lever)], hardware: ['Hardware', f => f.hardware], po: ['PO', f => f.po], frameOptions: ['Configuration', f => f.frameOptions], paintFormula: ['Paint formula', f => f.paintFormula], orderNo: ['Order #', f => f.orderNo], tag: ['Project name', f => f.project],
   };
   const colLabel = (key, cfg) => {
     if (BUILTIN[key]) return BUILTIN[key];
@@ -120,6 +120,7 @@
         : cfg.views.map(v => `<button class="${v.id === view.id ? 'on' : ''}" data-tab="${v.id}">${esc(v.name)}</button>`).join('')}${isAdmin() ? `<button class="gear" id="bd-cz">${icon('gear')}Customize</button>` : ''}</div>
       <div class="bd-tools"><label class="search bd-search">${icon('search')}<input id="bd-q" placeholder="Find a door, customer, project or note" autocomplete="off" spellcheck="false" value="${esc(S.boardQ || '')}"></label>
         <button class="bd-attn${S.boardAttn ? ' on' : ''}" id="bd-attn">${icon('alert')}Needs a look${attn ? ` (${attn})` : ''}</button>
+        <button class="bd-attn" id="bd-rework">${icon('wrench')}Rework</button>
         <button class="bd-attn${S.showArchived ? ' on2' : ''}" id="bd-arch">${S.showArchived ? 'Back to the board' : 'Archived'}</button>
         <span class="grow"></span>${K.densityBar('board')}</div>
       ${doors.length ? K.tableHtml(name, cols, rows) : `<div class="empty"><div class="ring">${icon('board')}</div><h3>${term || S.boardAttn ? 'Nothing matches' : S.showArchived ? 'Nothing archived' : 'No doors yet'}</h3><div>${term || S.boardAttn ? 'Try fewer words, or turn off “Needs a look”.' : S.showArchived ? 'Archived doors are kept here.' : 'Add doors from the Excel order forms, or press New door.'}</div>${!term && !S.boardAttn && !S.showArchived ? `<button class="btn primary big" id="bd-forms">${icon('door')}Add from order forms</button>` : ''}</div>`}`;
@@ -129,6 +130,7 @@
     const inp = $('#bd-q');
     inp.oninput = () => { S.boardQ = inp.value; S.boardSnap = ''; const pos = inp.selectionStart; loadBoard(true).then(() => { const n = $('#bd-q'); if (n) { n.focus(); n.setSelectionRange(pos, pos); } }); };
     $('#bd-attn').onclick = () => { S.boardAttn = !S.boardAttn; redraw(); };
+    $('#bd-rework').onclick = () => reworkReport();
     $('#bd-arch').onclick = () => { S.showArchived = !S.showArchived; redraw(); };
     $('#bd-new').onclick = () => newDoor(cfg);
     if ($('#bd-forms')) $('#bd-forms').onclick = () => window.Portal.setView('orders');
@@ -254,6 +256,20 @@
     try { await K.post('labels/save', { field: field.id, labels: res }); toast('Labels saved'); } catch (e) { toast(e.message, true); return false; }
     K.afterChange();
     return true;
+  }
+
+  // ---------- rework: what had to be fixed, where, and what it cost ----------
+  async function reworkReport() {
+    let r; try { r = await api('jobs/corrections?days=30'); } catch (e) { toast(e.message, true); return; }
+    const hrs = m => (m >= 90 ? (m / 60).toFixed(1) + ' h' : m + ' min');
+    const list = (rows, empty) => rows.length ? `<ul class="fix-list">${rows.map(x => `<li><b>${esc(x.name)}</b><span>${x.count} correction${x.count === 1 ? '' : 's'} · ${hrs(x.minutes)}</span></li>`).join('')}</ul>` : `<div class="dr-note">${empty}</div>`;
+    await K.modal({
+      title: 'Rework, last 30 days', ok: 'Close', noCancel: true, wide: true,
+      html: r.total.count ? `<p><b>${r.total.count}</b> correction${r.total.count === 1 ? '' : 's'} on <b>${r.total.doors}</b> door${r.total.doors === 1 ? '' : 's'}, <b>${hrs(r.total.minutes)}</b> of fixing.</p>
+        <h3 class="cz-h">By what was fixed</h3>${list(r.byReason)}<h3 class="cz-h">By station</h3>${list(r.byStation)}
+        <h3 class="cz-h">Latest</h3><ul class="fix-list">${r.recent.map(c => `<li><b>${esc(c.number)} · ${esc(c.reason)}${c.minutes ? ' · ' + c.minutes + ' min' : ''}</b><span>${esc([c.station || c.dept, c.who].filter(Boolean).join(' · '))}${c.note ? ' · ' + esc(c.note) : ''}</span></li>`).join('')}</ul>`
+        : '<div class="empty-note">Nothing has been logged yet. When something is fixed, tap “Log a correction” on the door or its station card.</div>',
+    });
   }
 
   // ---------- admins: automations ----------

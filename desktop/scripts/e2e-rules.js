@@ -112,7 +112,7 @@ try {
   check('before the starter a door has no needs and nothing is set', js.needsConfig() === null && js.door(js.createDoor({ number: '26-690', components: [], needs: { frame: false } }, 'Office')).needs === null);
   const t = js.applyDoorShopTemplate('Office', '');
   const f2 = js.fields(), by = n => f2.find(f => f.name === n);
-  check('the starter makes a column per step and reuses the ones that exist', t.columns.length === 12 && !t.columns.includes('CNC Frame') && by('Verification') && by('Wrapping') && by('QC') && by('Panel Received'), t.columns);
+  check('the starter makes a column per step and reuses the ones that exist', t.columns.length === 15 && !t.columns.includes('CNC Frame') && by('Verification') && by('Wrapping') && by('QC') && by('Panel Received'), t.columns);
   check('a column that was already there gets a "Not needed" label that counts as done', js.fields().find(f => f.name === 'CNC Panel').labels.some(l => l.name === 'Not needed' && l.done));
   const t2 = js.applyDoorShopTemplate('Office', '');
   check('applying it again changes nothing', !t2.columns.length && !t2.tabs.length && !t2.rules.length);
@@ -121,7 +121,7 @@ try {
   const shown = id => { const cur = Object.entries(js.cellsOf(id)).map(([f, c]) => ({ field_id: +f, label_id: c.label })); const dn = new Set(fl().flatMap(f => f.labels.filter(l => l.done).map(l => l.id)));
     return js.views().filter(v => v.filter.length && v.filter.every(c => js.holdsCond(c, cur, dn))).map(v => v.name).sort().join(' | '); };
   const tap = (id, ...names) => { for (const n of names) js.setCell(id, F(n).id, done(n), 'Office', ''); };
-  const door = (number, needs) => js.createDoor({ number, components: [], needs }, 'Office');
+  const door = (number, needs) => js.createDoor({ number, components: [], needs: { glass: false, ...needs } }, 'Office');          // glass has its own scenarios below
 
   // a frame and a panel (the usual door)
   const a1 = door('26-801', { frame: true, panel: true, rs: false });
@@ -161,7 +161,7 @@ try {
   // fixing what a door needs afterwards
   const c1 = door('26-807', { frame: true, panel: true, rs: false });
   js.setNeeds(c1, { frame: true, panel: true, rs: true }, 'Office', '');
-  check('the office can say later that a door needs rail & stile', js.door(c1).needs.rs === true && shown(c1) === 'Material Cutting | Panels coming in');
+  check('the office can say later that a door needs rail & stile', js.door(c1).needs.rs === true && shown(c1) === 'Material Cutting | Panels coming in', shown(c1));
   tap(c1, 'Material Cutting');
   check('…and the work already done is kept when it does', shown(c1) === 'CNC Frame | CNC Rail & Stile | Panels coming in');
   tap(c1, 'CNC Frame');
@@ -169,6 +169,18 @@ try {
   check('taking a part away sets it to Not needed', js.door(c1).needs.frame === false && !shown(c1).includes('Frame Filling'));
   js.setNeeds(c1, { frame: true, panel: true, rs: true }, 'Office', '');
   check('putting it back does not erase real progress', js.cellsOf(c1)[F('CNC Frame').id].label === done('CNC Frame') && js.door(c1).needs.frame === true);
+
+  // glass: its own stream (arrived, then QC), and Assembly waits for it
+  const g1 = door('26-809', { frame: true, panel: false, rs: false, glass: true });
+  tap(g1, 'Material Cutting', 'CNC Frame', 'Frame Filling', 'Verification', 'Paint Prep', 'Paint');
+  check('a door with glass is on the Glass tab from the start, and Assembly waits for it', shown(g1) === 'Glass', shown(g1));
+  tap(g1, 'Glass Arrived');
+  check('glass that has arrived still has to pass QC (the tab keeps it)', shown(g1) === 'Glass', shown(g1));
+  tap(g1, 'Glass QC');
+  check('with glass checked, the door can be assembled', shown(g1) === 'Assembly', shown(g1));
+  const g2 = door('26-810', { frame: true, panel: false, rs: false, glass: false });
+  check('a door with no glass never shows on the Glass tab', !shown(g2).includes('Glass'));
+  check('the Cart column is on every station tab', js.views().filter(v => v.filter.length).every(v => v.cols.includes('#' + F('Cart').id)));
 
   // wrapping and QC: one station, two steps, either order
   const w1 = door('26-808', { frame: true, panel: false, rs: false });
@@ -186,23 +198,66 @@ try {
   js.deleteField(F('QC').id, 'Office', '');
   check('a tab loses a condition on a deleted column rather than keep pointing at it', js.views().every(v => v.filter.every(c => js.fields().some(f => f.id === c.field) && (c.with || []).every(x => js.fields().some(f => f.id === x)))));
   check('a rule that watched a deleted column is switched off', js.rules().find(r => r.name === 'Needs QC').enabled === false);
+  // corrections: rework as a record, with minutes
+  {
+    const cd = js.createDoor({ number: '26-950', components: [] }, 'Office');
+    js.addCorrection(cd, { reason: 'Trimmed', minutes: 10, station: 'Assembly', note: 'trimmed 5/8 off top of panel' }, 'Assembly', 'CH');
+    js.addCorrection(cd, { reason: 'Re-painted', minutes: 45, station: 'Paint' }, 'Paint', '');
+    js.addCorrection(cd, { reason: 'Trimmed', minutes: 5, station: 'Assembly' }, 'Assembly', 'CH');
+    const sum = js.correctionSummary(30);
+    check('corrections are logged with who, where and how long', js.corrections(cd).length === 3 && js.corrections(cd)[2].who === 'CH' && js.corrections(cd)[2].minutes === 10);
+    check('the summary totals the minutes and doors', sum.total.count === 3 && sum.total.minutes === 60 && sum.total.doors === 1, sum.total);
+    check('…and ranks the reasons and stations by the minutes they cost', sum.byReason[0].name === 'Re-painted' && sum.byReason[0].minutes === 45 && sum.byStation.find(x => x.name === 'Assembly').minutes === 15, sum.byStation);
+    check('a correction needs a reason and sensible minutes', throws(() => js.addCorrection(cd, { reason: '', minutes: 5 }, 'Paint', ''), 400) && throws(() => js.addCorrection(cd, { reason: 'Trimmed', minutes: -5 }, 'Paint', ''), 400));
+    check('it is in the door\'s history', js.events(20, cd).some(e => e.kind === 'correction.added' && e.data.minutes === 45));
+  }
+
   // the order form's free-text notes, and rail & stile read from the panel type (as on the shop's real forms)
   {
     const XLSX = require('xlsx'), { Orders } = require('../src/orders'), { doorFromOrder } = require('../src/intake');
     const root = path.join(T, 'orders'); fs.mkdirSync(path.join(root, 'Door Orders'), { recursive: true });
-    const make = (door, ptype, notes) => {
+    const make = (door, series, ptype, sidePtype, notes) => {
       const ws = {}, put = (a, v) => { ws[a] = { t: 's', v, w: String(v) }; };
-      put('I4', 'Customer Name:'); put('J4', 'Acme'); put('I19', 'Panel Series'); put('J19', 'Mastergrain'); put('I20', 'Panel type:'); put('J20', ptype);
+      put('I4', 'Customer Name:'); put('J4', 'Acme'); put('I19', 'Panel Series'); put('J19', series); put('I20', 'Panel type:'); put('J20', ptype);
+      put('I25', 'Main Door glass size:'); put('J25', door === '26-903' ? 'FALSE' : '22 x 64 x 1');
+      if (sidePtype) { put('I31', 'Panel type:'); put('J31', sidePtype); }
       put('I8', 'Target Ship Date:'); put('J8', 'September 24, 2026'); put('I45', 'Door Number:'); put('J45', door); put('B20', 'Hinge Side:'); put('E20', 'RH');
       put('B46', 'Other Notes:'); put('E46', notes[0]); put('C48', notes[1]); put('C51', notes[2]); if (notes[2]) put('H51', '10 MIN'); put('J47', 'Frame'); put('C58', 'Please Sign & date to confirm');
-      ws['!ref'] = 'A1:AM70';
-      XLSX.writeFile({ SheetNames: ['Main Order Form'], Sheets: { 'Main Order Form': ws } }, path.join(root, 'Door Orders', `Door ${door}.xlsx`), { bookType: 'xlsx' });
+      put('I73', 'Mixed in House / Formula #:'); put('J73', '109971542');
+      ws['!ref'] = 'A1:AM80';
+      const pl = {}, pp = (a, v) => { pl[a] = { t: 's', v, w: String(v) }; }, pn = (a, v) => { pl[a] = { t: 'n', v, w: String(v) }; };
+      pp('A11', '800 Side Jambs'); pp('D11', 'Quantity'); pp('F11', 'Cut'); pp('G11', 'Prep'); pp('H11', 'Filled'); pp('I11', 'Paint Prep'); pp('J11', 'Painted'); pp('K11', 'Quality');
+      pp('A12', 'Door Jamb'); pp('C12', '97 1/4'); pn('D12', 2); pp('E12', '1,2'); pp('F12', 'Done'); pp('G12', 'Done'); pp('H12', '-'); pp('I12', '-');
+      pp('A13', 'FALSE'); pp('D13', 'FALSE'); pp('A14', '800 Header'); pp('D14', 'Quantity'); pp('F14', 'Cut'); pp('G14', 'Prep'); pp('H14', 'Filled');
+      pp('A15', 'Frame Header'); pp('C15', '44 1/4'); pn('D15', 1); pp('F15', 'Done'); pp('G15', 'Done'); pp('H15', '-');
+      pp('A54', 'Other Components'); pp('D54', 'Quantity'); pp('F54', 'Cut'); pp('A56', 'door panel'); pp('C56', 'FALSE'); pn('D56', 1); pp('F56', '-');
+      pl['!ref'] = 'A1:K70';
+      XLSX.writeFile({ SheetNames: ['Main Order Form', 'Parts List'], Sheets: { 'Main Order Form': ws, 'Parts List': pl } }, path.join(root, 'Door Orders', `Door ${door}.xlsx`), { bookType: 'xlsx' });
     };
-    make('26-901', '2 panel', ['install lock', 'send capping separate', 'Trimmed 5/8" off panel CH']); make('26-902', 'Flush', ['-', '', '']);
-    const o = new Orders(root, XLSX), list = o.list(), a = list.find(x => x.door === '26-901'), b = list.find(x => x.door === '26-902');
-    check('the form\'s Other Notes are read, one line per row, stopping before "Please Sign"', a.f.orderNotes === 'install lock\nsend capping separate\nTrimmed 5/8" off panel CH · 10 MIN', a.f.orderNotes);
-    check('a form with no notes has none', b.f.orderNotes === '');
-    check('"2 panel" reads as rail & stile and "Flush" does not', doorFromOrder(a).needs.rs === true && doorFromOrder(b).needs.rs === false);
+    make('26-901', 'Mastergrain Smooth Edge', '2 panel', '', ['install lock', 'send capping separate', 'Trimmed 5/8" off panel CH']);
+    make('26-902', 'Traditional Rail and Stile', 'Flush', '', ['-', '', '']);
+    make('26-903', 'Richersons Smooth skin', 'Flush', 'Modern Rail and Stile', ['-', '', '']);
+    const o = new Orders(root, XLSX), list = o.list(), by = d => list.find(x => x.door === d);
+    check('the form\'s Other Notes are read, one line per row, stopping before "Please Sign"', by('26-901').f.orderNotes === 'install lock\nsend capping separate\nTrimmed 5/8" off panel CH · 10 MIN', by('26-901').f.orderNotes);
+    check('a form with no notes has none', by('26-902').f.orderNotes === '');
+    check('"2 panel" and "Flush" are ordinary panels; a "... Rail and Stile" series is rail & stile', doorFromOrder(by('26-901')).needs.rs === false && doorFromOrder(by('26-902')).needs.rs === true);
+    check('a rail & stile sidelight panel makes the door need rail & stile too', by('26-903').f.sidelightPanelType === 'Modern Rail and Stile' && doorFromOrder(by('26-903')).needs.rs === true);
+    check('glass is needed when the form gives a glass size, and not when it says FALSE', doorFromOrder(by('26-901')).needs.glass === true && doorFromOrder(by('26-903')).needs.glass === false, [by('26-903').f.glassSize]);
+    check('the paint formula is read', by('26-901').f.paintFormula === '109971542');
+    const parts = o.parts(by('26-901').rel);
+    check('the Parts List is read in blocks with sizes, quantities and what is done', parts.length === 3 && parts[0].title === '800 Side Jambs' && parts[0].parts[0].name === 'Door Jamb' && parts[0].parts[0].length === '97 1/4' && parts[0].parts[0].qty === 2 && parts[0].parts[0].done.cut === true && parts[0].parts[0].done.filled === false, JSON.stringify(parts[0]));
+    check('empty template rows (FALSE) are skipped', parts.every(sec => sec.parts.every(p => p.name !== 'FALSE')));
+
+    // catching a door up from its Parts List
+    const cu = js.createDoor({ number: '26-901', components: [], sourcePath: 'Door Orders/Door 26-901.xlsx', needs: { glass: false } }, 'Office');
+    const plan = js.catchupPlan(cu, parts);
+    check('catch-up: cut and prepped parts set Material Cutting and CNC Frame, and say why', plan.steps.map(x => x.column).join() === 'Material Cutting,CNC Frame' && /All 2 frame parts are cut/.test(plan.steps[0].why) && /jamb and header/.test(plan.steps[1].why), plan.steps);
+    check('…and it does not claim filling that is not done', !plan.steps.some(x => x.column === 'Frame Filling'));
+    for (const st of plan.steps) js.setCell(cu, st.field, st.label, 'Office', '');
+    check('the door then lands where the work really is', shown(cu) === 'Frame Filling | Panels coming in', shown(cu));
+    check('applying it again changes nothing (already done)', js.catchupPlan(cu, parts).steps.every(x => x.already));
+    const none = js.createDoor({ number: '26-904', components: [], needs: { frame: false } }, 'Office');
+    check('a door with no frame is not caught up from frame parts', js.catchupPlan(none, parts).steps.length === 0);
   }
   js.close();
 } catch (e) {

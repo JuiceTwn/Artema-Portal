@@ -6,6 +6,7 @@
 const { HttpError } = require('./util');
 const { STAGES, STEPS } = require('./workflow');
 const { ACTORS } = require('./jobs');
+const { REASONS: CORRECTION_REASONS } = require('./corrections');
 const { doorFromOrder, DEFAULT_CHOICES } = require('./intake');
 
 /** The usual reasons a door goes back for repair: one tap instead of typing. */
@@ -46,10 +47,22 @@ const str = v => (typeof v === 'string' ? v : v == null ? '' : String(v));
 function get(jobs, orders, ep, q) {
   if (!jobs || !jobs.ok) throw new HttpError(503, 'Jobs are unavailable right now. Ask whoever looks after the Portal.');
   return wrap(() => {
-    if (ep === 'jobs/meta') return { stages: STAGES, steps: STEPS, actors: ACTORS, reasons: REPAIR_REASONS, defaults: DEFAULT_CHOICES, ...jobs.settings() };
+    if (ep === 'jobs/meta') return { stages: STAGES, steps: STEPS, actors: ACTORS, reasons: REPAIR_REASONS, correctionReasons: CORRECTION_REASONS, defaults: DEFAULT_CHOICES, ...jobs.settings() };
     if (ep === 'jobs/board') return { ...jobs.config(), doors: withForms(orders, jobs.board(q.archived === '1' ? 'archived' : 'active')) };
     if (ep === 'jobs/queue') { const r = jobs.queue(str(q.dept)); return { ...r, work: withForms(orders, r.work) }; }
-    if (ep === 'jobs/door') { const door = jobs.door(str(q.id)); return { door, events: jobs.events(40, door.id), comments: jobs.comments(door.id), ...jobs.config() }; }
+    if (ep === 'jobs/door') { const door = jobs.door(str(q.id)); return { door, events: jobs.events(40, door.id), comments: jobs.comments(door.id), corrections: jobs.corrections(door.id), ...jobs.config() }; }
+    if (ep === 'jobs/corrections') return jobs.correctionSummary(Number(q.days) || 30);
+    if (ep === 'jobs/parts') {
+      const door = jobs.door(str(q.id)), rel = String(door.sourcePath || '').replace(/^Door Orders\//, '');
+      if (!orders || !rel) return { sections: [], note: 'This door has no order form.' };
+      try { return { sections: orders.parts(rel) }; } catch { return { sections: [], note: 'Could not read the order form.' }; }
+    }
+    if (ep === 'jobs/catchup') {
+      const door = jobs.door(str(q.id)), rel = String(door.sourcePath || '').replace(/^Door Orders\//, '');
+      if (!orders || !rel) return { steps: [], note: 'This door has no order form to read.' };
+      let sections = []; try { sections = orders.parts(rel); } catch { return { steps: [], note: 'Could not read the order form.' }; }
+      return jobs.catchupPlan(door.id, sections);
+    }
     throw new HttpError(404, 'Not found');
   });
 }
@@ -102,6 +115,14 @@ function post(jobs, orders, ep, b, need = () => { }) {
       if (ep === 'jobs/template') return { ok: true, ...jobs.applyDoorShopTemplate(dept, who) };
       if (ep === 'jobs/rules/save') { jobs.saveRules(b.rules, dept, who); return { ok: true }; }
       if (ep === 'jobs/settings') { if (typeof b.guided === 'boolean') jobs.setGuided(b.guided, dept, who); return { ok: true, ...jobs.settings() }; }
+    }
+    if (ep === 'jobs/correction') { jobs.addCorrection(str(b.id), { reason: str(b.reason), minutes: b.minutes, note: str(b.note), station: str(b.station) }, dept, who); return withDoor(str(b.id)); }
+    if (ep === 'jobs/catchup') {
+      const door = jobs.door(str(b.id)), rel = String(door.sourcePath || '').replace(/^Door Orders\//, '');
+      if (!orders || !rel) throw new HttpError(400, 'This door has no order form to read');
+      const plan = jobs.catchupPlan(door.id, orders.parts(rel)), applied = [];
+      for (const st of plan.steps) if (!st.already) { jobs.setCell(door.id, st.field, st.label, dept, who); applied.push(st.column); }
+      return { ...withDoor(door.id), applied };
     }
     if (ep === 'jobs/needs') { jobs.setNeeds(str(b.id), b.needs || {}, dept, who); return withDoor(str(b.id)); }
     if (ep === 'jobs/note') { jobs.setNote(str(b.id), str(b.note), dept, who); return withDoor(str(b.id)); }

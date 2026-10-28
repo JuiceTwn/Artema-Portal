@@ -44,8 +44,10 @@ function doorFromOrder(summary, choices = {}) {
     if (!s) throw new HttpError(400, `Unknown choice for ${kind}`);
     components.push({ kind, sourceKind: s[0], source: s[1] });
   }
-  // the form does not say outright whether a door is rail & stile; the panel type usually does: "Flush" is a skin door, "2 panel" (or 3, 4...) is rail & stile. The office can correct it on the door.
-  const needs = { rs: /rail|stile/i.test(`${f.ptype || ''} ${f.series || ''}`) || /\b\d+\s*panel\b/i.test(f.ptype || '') };
+  // what a door needs, read from the form the way the shop's own sheets decide it: a rail & stile panel is a panel series of "Modern / Slimline / Traditional Rail and Stile"
+  // (a sidelight can be rail & stile on its own); "Flush" and "2 panel" are ordinary panels. Glass is needed when the form gives a glass size. The office can correct it on the door.
+  const rsRe = /rail\s*(and|&)\s*stile/i, has = v => !!String(v || '').trim();
+  const needs = { rs: rsRe.test(f.series || '') || rsRe.test(f.sidelightPanelType || ''), glass: has(f.glassSize) || has(f.sidelightGlass) || has(f.transomGlass) };
   return { needs, number: door, project: f.project || '', customer: f.customer || '', shipDate: normDate(f.ship), sourcePath: summary.path || '', components };
 }
 
