@@ -31,12 +31,12 @@ Rail & Stile (provider) ──────────────────�
 Frame parts: cut in-house, or bought ──► Frame Prep ─┤
 Panels: Skins ─► Panel Assembly (providers), or bought ┘
                                                      ▼
-Frame Prep [ cut ─► CNC ─► fill ─► paint prep ] ─► Paint ─► Assembly ─► Ship
+Frame Prep [ cut ─► CNC ─► fill ] ─► Paint [ paint prep ─► paint ] ─► Assembly ─► Ship
 ```
 
-- **Frame Prep** is the shop's name for everything before paint, excluding providers. It is one department (a few people) covering cutting, running the CNC (frames and panels), filling and paint prep. Frame and panel aim to move to paint *together*.
+- **Frame Prep** is the shop's name for everything before paint, excluding providers. It is one department (a few people) with three tracked steps: **cut, CNC (frames and panels), fill**. Paint prep is *not* part of it: it belongs to Paint. Frame and panel aim to move to paint *together*.
 - **Providers** are Skins, Panel Assembly and Rail & Stile (all internal), and any outside supplier. For the Portal an internal provider and an external supplier are the same thing: a *source* for a component, with an expected date and a "ready / received" event. Rail & Stile feeds the CNC.
-- **QC is not a stage.** Every department ends with a QC check by its lead hand, and that sign-off is what completes the department's stage.
+- **Steps and QC.** Everything before a department's QC is a separate tracked step (Frame Prep: cut, CNC, fill; Paint: paint prep, paint). QC is not a step: every department ends with a QC check by its lead hand, and that sign-off is what completes the department's stage.
 - **Release.** Ben / the office releases a door to start, after the other parts (glass, hardware, sill and so on) are in. Until there is real inventory, release uses a simple "parts in" tick list.
 
 ### Doors, components and projects
@@ -63,7 +63,7 @@ A door has **one flow position**. Repairs never move it.
 
 ### Departments in the app
 
-Frame Prep, Paint, Assembly, Shipping, Office (the stages and the views), plus the providers Skins, Panel Assembly and Rail & Stile (which feed components). Today's code has CNC, Frame Prep, Paint, Assembly and Office, with work-order views per department. Whether Frame Prep's inner steps (cut, CNC, fill, paint prep) are tracked separately or as one stage is open below.
+Frame Prep (cut, CNC, fill), Paint (paint prep, paint), Assembly, Shipping, Office, plus the providers Skins, Panel Assembly and Rail & Stile (which feed components). Today's code has CNC, Frame Prep, Paint, Assembly and Office as flat departments with a work-order view each; CNC becomes a step of Frame Prep and Paint gains paint prep.
 
 ## Built so far
 
@@ -83,7 +83,7 @@ Frame Prep, Paint, Assembly, Shipping, Office (the stages and the views), plus t
 ## Open (not decided yet)
 
 **Flow**
-- Does Frame Prep track its inner steps (cut, CNC, fill, paint prep) as separate stages, or is it one stage with one QC at the end? Separate steps give better numbers but more taps for a small team.
+- Whether Assembly and Shipping also have inner steps worth tracking.
 - Where exactly the frame and panel are paired before paint, and what happens when one is late.
 - Whether every door has the same components, or it varies by product (sidelights, transoms, glass).
 
