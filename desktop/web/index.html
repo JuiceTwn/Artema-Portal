@@ -10,6 +10,7 @@
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700&display=swap">
 <link rel="stylesheet" href="/theme.css">
 <link rel="stylesheet" href="/portal.css">
+<link rel="stylesheet" href="/jobs.css">
 </head>
 <body class="floor">
 <svg width="0" height="0" style="position:absolute" aria-hidden="true">
@@ -30,6 +31,15 @@
     <symbol id="i-copy" viewBox="0 0 24 24"><rect x="8" y="8" width="12" height="12" rx="2.5"/><path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2"/></symbol>
     <symbol id="i-door" viewBox="0 0 24 24"><path d="M6 21V4.5A1.5 1.5 0 0 1 7.5 3h9A1.5 1.5 0 0 1 18 4.5V21M4 21h16"/><circle cx="14.5" cy="12.5" r=".8"/></symbol>
     <symbol id="i-back" viewBox="0 0 24 24"><path d="M15 5l-7 7 7 7"/></symbol>
+    <symbol id="i-work" viewBox="0 0 24 24"><path d="M10 6h10M10 12h10M10 18h10"/><path d="m3.5 6 1.4 1.4L7.5 4.8M3.5 12l1.4 1.4 2.6-2.6M3.5 18l1.4 1.4 2.6-2.6"/></symbol>
+    <symbol id="i-board" viewBox="0 0 24 24"><rect x="3" y="4" width="5" height="16" rx="1.5"/><rect x="9.5" y="4" width="5" height="10" rx="1.5"/><rect x="16" y="4" width="5" height="13" rx="1.5"/></symbol>
+    <symbol id="i-wrench" viewBox="0 0 24 24"><path d="M20.5 6.5 17 10l-3-3 3.5-3.5a5 5 0 0 0-6.4 6.3L3.5 17.4a2 2 0 0 0 2.8 2.8l7.6-7.6a5 5 0 0 0 6.6-6.1z"/></symbol>
+    <symbol id="i-check" viewBox="0 0 24 24"><path d="m5 12.5 4.5 4.5L19 7.5"/></symbol>
+    <symbol id="i-alert" viewBox="0 0 24 24"><path d="M12 4 2.8 19.5h18.4z"/><path d="M12 10v4.5M12 17.2v.1"/></symbol>
+    <symbol id="i-undo" viewBox="0 0 24 24"><path d="M9 7 4 12l5 5"/><path d="M4 12h10a5 5 0 0 1 0 10h-3"/></symbol>
+    <symbol id="i-swap" viewBox="0 0 24 24"><path d="M7 4 3 8l4 4M3 8h14M17 20l4-4-4-4M21 16H7"/></symbol>
+    <symbol id="i-chat" viewBox="0 0 24 24"><path d="M4 5.5A1.5 1.5 0 0 1 5.5 4h13A1.5 1.5 0 0 1 20 5.5v9a1.5 1.5 0 0 1-1.5 1.5H10l-4.5 4v-4h0A1.5 1.5 0 0 1 4 14.5z"/></symbol>
+    <symbol id="i-gear" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M12 3v2.2M12 18.8V21M3 12h2.2M18.8 12H21M5.6 5.6l1.6 1.6M16.8 16.8l1.6 1.6M18.4 5.6l-1.6 1.6M7.2 16.8l-1.6 1.6"/></symbol>
     <symbol id="i-open" viewBox="0 0 24 24"><path d="M14 4h6v6M20 4l-9 9"/><path d="M18 14v4a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4"/></symbol>
   </defs>
 </svg>
@@ -38,6 +48,8 @@
   <aside class="side">
     <div class="brand"><img src="/assets/logo-light.webp" alt="Artema"><span>Portal</span></div>
     <button class="nav active" data-view="home"><svg class="i"><use href="#i-home"/></svg>Home</button>
+    <button class="nav" data-view="work"><svg class="i"><use href="#i-work"/></svg>My work<span class="count" id="work-count"></span></button>
+    <button class="nav" data-view="board"><svg class="i"><use href="#i-board"/></svg>Board</button>
     <button class="nav" data-view="orders"><svg class="i"><use href="#i-door"/></svg>Door orders</button>
     <button class="nav" data-view="files"><svg class="i"><use href="#i-files"/></svg>Files</button>
     <button class="nav" data-view="activity"><svg class="i"><use href="#i-activity"/></svg>What's new</button>
@@ -45,6 +57,7 @@
     <div class="side-label">Folders</div>
     <div class="quick" id="quick"></div>
     <div class="side-foot">
+      <div class="dept-line" id="dept-line"></div>
       <div class="who-line"><span class="dot" id="conn-dot"></span><span id="conn-text">Connected</span></div>
       <div id="who-text"></div>
       <button class="link" id="who-change">Change name</button>
@@ -68,6 +81,9 @@
       <section class="view" id="view-home">
         <div id="home"></div>
       </section>
+
+      <section class="view" id="view-work" hidden><div id="work"></div></section>
+      <section class="view" id="view-board" hidden><div id="board"></div></section>
 
       <section class="view" id="view-files" hidden>
         <div class="head">
@@ -103,10 +119,10 @@
 
 <nav class="tabs" id="tabs">
   <button class="active" data-view="home"><svg class="i"><use href="#i-home"/></svg>Home</button>
+  <button data-view="work"><svg class="i"><use href="#i-work"/></svg>My work</button>
+  <button data-view="board"><svg class="i"><use href="#i-board"/></svg>Board</button>
   <button data-view="orders"><svg class="i"><use href="#i-door"/></svg>Orders</button>
   <button data-view="files"><svg class="i"><use href="#i-files"/></svg>Files</button>
-  <button data-view="activity"><svg class="i"><use href="#i-activity"/></svg>New</button>
-  <button data-view="computers"><svg class="i"><use href="#i-monitor"/></svg>Computers</button>
 </nav>
 
 <div class="drop" id="drop"><div><svg class="i"><use href="#i-upload"/></svg><h2>Drop to upload</h2><p id="drop-to"></p></div></div>
@@ -119,6 +135,9 @@
   <div class="btns"><button type="button" class="btn" id="dlg-cancel">Cancel</button><button class="btn primary" id="dlg-ok">OK</button></div>
 </form></dialog>
 
+
 <script src="/portal.js"></script>
+<script src="/jobs.js"></script>
+<script src="/board.js"></script>
 </body>
 </html>

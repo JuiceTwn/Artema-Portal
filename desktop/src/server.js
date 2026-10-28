@@ -8,6 +8,7 @@ const { FailLimiter, parseCookies, sessionCookie, joinProof, normPin, prettyPin,
 const { can, canAssign, isRole, rank } = require('./roles');
 const { DEPARTMENTS, departmentOf } = require('./departments');
 const { renderWorkOrder } = require('./workorder');
+const jobsApi = require('./jobs-api');
 
 // With no role store (a caller that doesn't pass one) nobody is promoted: every joined computer is `general`.
 const NO_ROLES = { get: () => 'general', set() { throw new HttpError(503, 'Roles are unavailable right now'); }, forget() { }, all: () => ({}) };
@@ -94,7 +95,7 @@ function createPortalServer(store, port, webDir, hooks = {}) {
         if (ep === 'me') return sendJson(res, { kind: auth.kind, name: auth.name, role: auth.role, tag: (auth.id && store.devices[auth.id] && store.devices[auth.id].tag) || '' });
         if (ep.startsWith('orders')) {
           if (!hooks.orders) throw new HttpError(404, 'Not found');
-          if (ep === 'orders') return sendJson(res, { items: hooks.orders.list(), departments: DEPARTMENTS });
+          if (ep === 'orders') return sendJson(res, { items: hooks.orders.list(), departments: DEPARTMENTS, inShop: hooks.jobs && hooks.jobs.ok ? hooks.jobs.numbers() : [] });
           if (ep === 'orders/sheet') return sendJson(res, hooks.orders.sheet(String(q.path || ''), String(q.sheet || '')));
           if (ep === 'orders/workorder' || ep === 'orders/pdf') {
             const order = hooks.orders.find(String(q.path || '')), dept = departmentOf(q.dept) || 'Office';
@@ -112,6 +113,7 @@ function createPortalServer(store, port, webDir, hooks = {}) {
             return res.end(pdf);
           }
         }
+        if (ep.startsWith('jobs/')) return sendJson(res, jobsApi.get(hooks.jobs, hooks.orders, ep, q));
         if (ep === 'list') return sendJson(res, { path: store.safe(q.path).rel, items: store.list(q.path) });
         if (ep === 'tree') return sendJson(res, { items: store.tree() });
         if (ep === 'search') return sendJson(res, { items: store.search(q.q) });
@@ -156,6 +158,7 @@ function createPortalServer(store, port, webDir, hooks = {}) {
         return sendJson(res, { ok: true });
       } else if (req.method === 'POST') {
         const b = await readBody(req);
+        if (ep.startsWith('jobs/')) return sendJson(res, jobsApi.post(hooks.jobs, hooks.orders, ep, b, need));
         if (ep === 'mkdir') { store.mkdir(b.path, who); return sendJson(res, { ok: true }); }
         if (ep === 'delete') { store.delete(b.path, who); return sendJson(res, { ok: true }); }
         if (ep === 'move') { store.move(b.from, b.to, who); return sendJson(res, { ok: true }); }

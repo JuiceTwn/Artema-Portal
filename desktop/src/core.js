@@ -13,6 +13,7 @@ const {
 } = require('./security');
 const { Store } = require('./store');
 const { RoleStore } = require('./roles');
+const { JobStore } = require('./jobs');
 const { UpdateSource, UpdateClient } = require('./update');
 const { ServerUpdater } = require('./selfupdate');
 const { Orders } = require('./orders');
@@ -62,7 +63,7 @@ class Core {
     this.hooks = hooks;
     this.cfgPath = path.join(dataDir, 'config.json');
     this.cfg = readJson(this.cfgPath, {});
-    this.store = null; this.server = null; this.agent = null; this.roles = null;
+    this.store = null; this.server = null; this.agent = null; this.roles = null; this.jobs = null; this.jobTimers = [];
     this.startError = '';
     this.localServer = null; this.localPort = 0;
     this.beacon = null; this.watchTimer = null; this.conflict = null;
@@ -153,9 +154,11 @@ class Core {
           port = DEFAULT_PORT; this.saveCfg({ ...this.cfg, port });
         }
         this.roles = new RoleStore(path.join(this.dataDir, 'portal.db'));
+        this.jobs = new JobStore(path.join(this.dataDir, 'jobs.db'), this.cfg.backup_dir || path.join(this.dataDir, 'backups'));
+        this.startJobBackups();
         this.startSelfUpdater();
         this.server = createPortalServer(this.store, port, this.webDir, {
-          appVersion: this.app.version || '', roles: this.roles, orders: new Orders(this.cfg.folder, new Proxy({}, { get: (_, k) => require('xlsx')[k] })), serverUpdate: this.serverUpdateApi(), renderPdf: this.hooks.renderPdf, update: this.app.updateDir ? new UpdateSource(this.app.updateDir) : null, reveal: this.hooks.reveal, tls: this.tls, getPin: () => this.getPin(), rotatePin: () => this.rotatePin(), trustLoopback: () => this.trustLoopback,
+          appVersion: this.app.version || '', roles: this.roles, jobs: this.jobs, orders: new Orders(this.cfg.folder, new Proxy({}, { get: (_, k) => require('xlsx')[k] })), serverUpdate: this.serverUpdateApi(), renderPdf: this.hooks.renderPdf, update: this.app.updateDir ? new UpdateSource(this.app.updateDir) : null, reveal: this.hooks.reveal, tls: this.tls, getPin: () => this.getPin(), rotatePin: () => this.rotatePin(), trustLoopback: () => this.trustLoopback,
         });
         await new Promise((resolve, reject) => {
           this.server.once('error', reject);
@@ -289,8 +292,27 @@ class Core {
     if (this.server) { const s = this.server; await new Promise(r => { s.close(r); s.closeAllConnections && s.closeAllConnections(); }); }
     if (this.agent) this.agent.stop();
     this.server = this.agent = this.store = null;
+    for (const t of this.jobTimers) { clearTimeout(t); clearInterval(t); }
+    this.jobTimers = [];
+    if (this.jobs) { this.jobs.close(); this.jobs = null; }
     if (this.roles) { this.roles.close(); this.roles = null; }
     this.tls = null;
+  }
+
+  /**
+   * Backs up the jobs database every 6 hours, and once at start unless a recent backup exists (restarts must not flood the folder).
+   * Backups go to `backup_dir` from the settings when it is set (ideally another disk), otherwise next to the data.
+   */
+  startJobBackups() {
+    const jobs = this.jobs;
+    if (!jobs || !jobs.ok) return;
+    const run = () => { try { const n = jobs.backup(); log(`jobs backup written: ${n}`); } catch (e) { log(`jobs backup FAILED: ${e.message}`); } };
+    const newest = jobs.backups()[0];
+    let age = Infinity; try { if (newest) age = Date.now() - fs.statSync(newest.file).mtimeMs; } catch { /* none */ }
+    const first = setTimeout(run, age > 6 * 3600 * 1000 ? 15000 : 5 * 60 * 1000);
+    const every = setInterval(run, 6 * 3600 * 1000);
+    first.unref && first.unref(); every.unref && every.unref();
+    this.jobTimers = [first, every];
   }
 
   saveCfg(cfg) { this.cfg = cfg; writeJson(this.cfgPath, cfg, 0o600); }
