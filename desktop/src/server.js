@@ -113,7 +113,7 @@ function createPortalServer(store, port, webDir, hooks = {}) {
             return res.end(pdf);
           }
         }
-        if (ep.startsWith('jobs/')) return sendJson(res, jobsApi.get(hooks.jobs, ep, q));
+        if (ep.startsWith('jobs/')) return sendJson(res, jobsApi.get(hooks.jobs, hooks.orders, ep, q));
         if (ep === 'list') return sendJson(res, { path: store.safe(q.path).rel, items: store.list(q.path) });
         if (ep === 'tree') return sendJson(res, { items: store.tree() });
         if (ep === 'search') return sendJson(res, { items: store.search(q.q) });

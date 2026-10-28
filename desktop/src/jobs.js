@@ -40,6 +40,7 @@ const MIGRATIONS = {
       customer    TEXT    NOT NULL DEFAULT '',
       source_path TEXT    NOT NULL DEFAULT '',
       ship_date   TEXT    NOT NULL DEFAULT '',
+      notes       TEXT    NOT NULL DEFAULT '',
       created_at  INTEGER NOT NULL,
       released_at INTEGER,
       released_by TEXT    NOT NULL DEFAULT ''
@@ -249,7 +250,7 @@ class JobStore {
     }
     return {
       id, number: d.number, project: d.project || '', projectTotal, projectIndex, notReady: components.filter(c => c.ready_at === null).map(c => c.kind), customer: d.customer, sourcePath: d.source_path, shipDate: d.ship_date,
-      createdAt: d.created_at, releasedAt: d.released_at, releasedBy: d.released_by, status,
+      createdAt: d.created_at, notes: d.notes, releasedAt: d.released_at, releasedBy: d.released_by, status,
       next: next ? { key: next.key, dept: next.dept, label: next.label, qc: next.qc } : null,
       waitingOn: waiting, checks, components, completions, detours, openDetours: open,
     };
@@ -276,6 +277,18 @@ class JobStore {
         : db.prepare("UPDATE components SET ready_at = NULL, ready_by = '' WHERE door_id = ? AND kind = ?").run(id, kind);
       if (!r.changes) throw bad('This door has no such component', 404);
       this.event(db, id, ready ? 'component.ready' : 'component.unready', d, who, { kind });
+    });
+  }
+
+  /** The note on a door (what a department needs the others to know). Saved as typed, up to 500 characters. */
+  setNote(ref, note, dept, who) {
+    const d = actor(dept), n = String(note == null ? '' : note).replace(/\r/g, '').trim().slice(0, 500);
+    return this.tx(db => {
+      const id = this.doorId(ref);
+      const old = db.prepare('SELECT notes FROM doors WHERE id = ?').get(id).notes;
+      if (old === n) return;
+      db.prepare('UPDATE doors SET notes = ? WHERE id = ?').run(n, id);
+      this.event(db, id, 'note.set', d, who, { note: n });
     });
   }
 

@@ -86,7 +86,7 @@ const doorFromName = name => { const m = /(\d{2}-\d{1,4})/.exec(name); return m 
 
 class Orders {
   /** `root` is the Portal's shared folder. `xlsx` is passed in so the (large) library is only loaded when orders are used. */
-  constructor(root, xlsx) { this.root = root; this.XLSX = xlsx; this.cache = new Map(); }
+  constructor(root, xlsx) { this.root = root; this.XLSX = xlsx; this.cache = new Map(); this.sums = new Map(); }
   get dir() { return path.join(this.root, FOLDER); }
 
   /** Makes sure the folder exists, so there is somewhere obvious to drop forms. */
@@ -129,6 +129,15 @@ class Orders {
 
   /** Everything read from one form: { path, rel, name, mtime, size, door, f: { key: text } }, or `error` when it can't be read as an order form. */
   summary(f) {
+    const hit = this.sums.get(f.rel);
+    if (hit && hit.mtime === f.mtime && hit.size === f.size) return hit.out;          // the screens ask every few seconds: read a form again only when it changed
+    const out = this.summaryUncached(f);
+    if (this.sums.size >= 2000) this.sums.clear();
+    this.sums.set(f.rel, { mtime: f.mtime, size: f.size, out });
+    return out;
+  }
+
+  summaryUncached(f) {
     const base = { path: `${FOLDER}/${f.rel}`, rel: f.rel, name: f.name, mtime: f.mtime, size: f.size, door: doorFromName(f.name) };
     try {
       const { ws, idx } = this.open(f.rel);

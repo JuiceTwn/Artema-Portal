@@ -129,8 +129,9 @@
     await meta();
     const dept = myDept();
     if (!dept || S.pickDept) { if (force || S.workSnap !== 'picker') { S.workSnap = 'picker'; renderPicker(); } return; }
+    if (!force && editing()) return;
     const data = await api('jobs/queue?dept=' + q(dept));
-    const snap = JSON.stringify([dept, data]);
+    const snap = JSON.stringify([dept, data, density(), S.sort]);
     $('#work-count').textContent = data.work.length + data.repairs.length + data.parts.length + data.release.length || '';
     if (!force && snap === S.workSnap) return;
     S.workSnap = snap;
@@ -171,15 +172,14 @@
         <button class="wk-do" data-ready="${p.doorId}" data-kind="${p.kind}" data-num="${esc(p.number)}">${icon('check')}${dept === 'Office' ? (KIND[p.kind] || p.kind) + ' has arrived' : (KIND[p.kind] || p.kind) + ' is ready'}</button>
       </div>`).join('')}</div>` : '';
 
-    const work = nWork ? `<div class="wk-sec"><h2>To do</h2>${data.work.map(d => {
-      const wait = d.waitingOn.length;
-      return `<div class="wk-card${wait ? ' waiting' : ''}" data-id="${d.id}" tabindex="0">
-        <div class="wk-top"><span class="doorpill">${esc(d.number)}</span><div class="wk-t"><b>${esc(d.customer || 'No customer')}</b><span>${esc(projectLine(d))}</span></div>${dueChip(d.shipDate)}</div>
-        ${dots(m, d, dept)}
-        ${wait ? `<div class="wait">${icon('alert')}Waiting for the ${d.waitingOn.map(k => (KIND[k] || k).toLowerCase()).join(' and ')} to be ready</div>`
-          : `<button class="wk-do" data-step="${d.next.key}" data-id="${d.id}" data-num="${esc(d.number)}">${icon('check')}${esc(doneWord(stepInfo(m, d.next.key)))}</button>`}
-      </div>`;
-    }).join('')}</div>` : '';
+    let work = '';
+    if (nWork) {
+      const st = m.stages.find(x => x.dept === dept);
+      let cols = [doorCol, filesCol, dueCell, custCol, ...(st ? m.steps.filter(x => x.stage === st.id).map(x => stepCol(x, m)) : []), actCol(dept, m), ...fieldCols(dept, 4), notesCol];
+      if (!data.work.some(d => d.sourcePath)) cols = cols.filter(c => c !== filesCol);
+      const rows = sortRows('work', cols, data.work, { i: cols.indexOf(dueCell), dir: 1 });
+      work = `<div class="wk-sec"><div class="wk-h2"><h2>To do <span class="n">${nWork}</span></h2>${densityBar('work')}</div>${tableHtml('work', cols, rows)}</div>`;
+    }
 
     const empty = !nWork && !nRep && !nParts && !nRel ? `<div class="empty"><div class="ring">${icon('check')}</div><h3>You're all caught up</h3><div>Nothing is waiting for ${esc(dept)}. New work shows up here by itself.</div><button class="btn big" data-go-board>${icon('board')}See the whole board</button></div>` : '';
 
@@ -187,6 +187,8 @@
     $('#wk-change').onclick = () => { S.pickDept = true; S.workSnap = ''; loadWork(true); };
     const gb = $('#work [data-go-board]'); if (gb) gb.onclick = () => setView('board');
     wireCards('#work');
+    wireDensity('work', () => { S.workSnap = ''; loadWork(true); });
+    wireTable('work', '#work', () => { S.workSnap = ''; loadWork(true); });
   }
   const dueChip = shipDate => { const d = due(shipDate); return `<span class="due ${d.cls}">${esc(d.text)}</span>`; };
   /** The same, short enough for a board card. */
@@ -204,7 +206,6 @@
       card.onkeydown = e => { if (e.key === 'Enter' && e.target === card) open(); };
     });
     $$(root + ' [data-open]').forEach(b => b.onclick = () => openDoor(b.dataset.open));
-    $$(root + ' [data-step]').forEach(b => b.onclick = () => completeStep(b.dataset.id, b.dataset.step, b.dataset.num, b));
     $$(root + ' [data-repair]').forEach(b => b.onclick = () => repairDone(b.dataset.repair, b.dataset.num, b));
     $$(root + ' [data-ready]').forEach(b => b.onclick = () => markReady(b.dataset.ready, b.dataset.kind, b.dataset.num, b));
     $$(root + ' [data-release]').forEach(b => b.onclick = () => releaseDoor(b.dataset.release, b.dataset.num, b));
@@ -278,6 +279,7 @@
   }
   async function drawDoor(id, force) {
     if (String(S.drawer) !== String(id)) return;
+    if (!force && document.activeElement && document.activeElement.id === 'dr-note') return;          // don't redraw under someone who is typing
     let data;
     try { data = await api('jobs/door?id=' + q(id)); } catch (e) { if (force) toast(e.message, true); return; }
     const snap = JSON.stringify(data);
@@ -303,6 +305,7 @@
       return `<div class="st-group"><div class="st-h" style="--dc:${dcol(st.dept)}">${esc(st.dept)}</div>${rows}</div>`;
     }).join('');
 
+    const notes = `<div class="dr-sec"><h3>Notes</h3><textarea id="dr-note" class="field" rows="3" maxlength="500" placeholder="Anything the next person should know">${esc(d.notes || '')}</textarea></div>`;
     const comps = d.components.length ? `<div class="dr-sec"><h3>Parts</h3>${d.components.map(c => {
       const ready = c.ready_at !== null;
       return `<div class="part ${ready ? 'ok' : ''}"><div><b>${esc(KIND[c.kind] || c.kind)}</b><span>${c.source_kind === 'external' ? 'From ' + esc(c.source || 'a supplier') : 'Made by ' + esc(c.source)}${c.expected_at ? ' · due ' + esc(c.expected_at) : ''}</span></div>
@@ -330,7 +333,7 @@
     $('#detail-in').innerHTML = `<button class="close" id="d-close" aria-label="Close">${icon('x')}</button>
       <div class="dr-head"><span class="doorpill big">${esc(d.number)}</span><div><h2>${esc(d.customer || 'No customer')}</h2><div class="muted sm">${esc(projectLine(d))}</div></div></div>
       <div class="dr-due ${dueI.cls}">${esc(dueI.text)}</div>
-      ${status}${actions}${repairs}${checks}${comps}
+      ${status}${actions}${repairs}${checks}${notes}${comps}
       <div class="dr-sec"><h3>Where it is</h3>${steps}</div>${history}`;
     $('#app').classList.add('has-detail');
     const root = $('#detail-in');
@@ -340,6 +343,7 @@
     $$('[data-ready]', root).forEach(b => b.onclick = () => markReady(d.id, b.dataset.ready, d.number, b));
     $$('[data-unready]', root).forEach(b => b.onclick = () => act(b, () => post('ready', { id: d.id, kind: b.dataset.unready, ready: false })));
     $$('[data-repair-done]', root).forEach(b => b.onclick = () => repairDone(b.dataset.repairDone, d.number, b));
+    $('#dr-note').onblur = e => { const v = e.target.value.trim(); if (v !== (d.notes || '')) act(null, () => post('note', { id: d.id, note: v })); };
     if ($('#dr-release')) $('#dr-release').onclick = () => releaseDoor(d.id, d.number, $('#dr-release'));
     if ($('#dr-repair')) $('#dr-repair').onclick = () => sendForRepair(d);
     if ($('#dr-undo')) $('#dr-undo').onclick = () => undoLast(d);
@@ -367,45 +371,175 @@
     await window.Portal.showOrder(d.sourcePath.replace(/^Door Orders\//, ''));
   }
 
+  // ---------- tables: one dense, readable table used by the Board and My work ----------
+  // Rows are one door each. Status columns are filled blocks of colour so a column can be scanned from across the room, and the whole
+  // table can be shown Compact, Standard or Large (remembered by this browser) so it reads comfortably on any screen.
+  const DENSITY = [['compact', 'Compact'], ['standard', 'Standard'], ['large', 'Large']];
+  const density = () => { const d = store.get('artema.density'); return DENSITY.some(x => x[0] === d) ? d : 'standard'; };
+  const densityBar = scope => `<div class="seg" id="density-${scope}" role="group" aria-label="Row size">${DENSITY.map(([k, l]) => `<button class="${k === density() ? 'on' : ''}" data-d="${k}">${l}</button>`).join('')}</div>`;
+  function wireDensity(scope, redraw) { $$(`#density-${scope} [data-d]`).forEach(b => b.onclick = () => { store.set('artema.density', b.dataset.d); redraw(); }); }
+  const nat = (a, b) => String(a).localeCompare(String(b), undefined, { numeric: true });
+  const both = (...a) => a.filter(Boolean).join(' · ');
+  const doorLabel = d => `<b>${esc(d.number)}</b>${d.projectTotal > 1 ? `<span class="of">${d.projectIndex} of ${d.projectTotal}</span>` : ''}`;
+  const cellOf = (c, d) => { const x = c.cell(d); return typeof x === 'string' ? { h: x, cls: '' } : x; };
+
+  /**
+   * cols: [{ label, cls?, sort?(a, b), cell(d) -> html | { h, cls } }]. Rows are doors. `groups` (optional) is [{ id, title, color, rows }].
+   * The sort state is kept per table name in S.sort[name].
+   */
+  function tableHtml(name, cols, rows, groups) {
+    const st = (S.sort && S.sort[name]) || {};
+    const head = `<tr>${cols.map((c, i) => `<th class="${c.cls || ''}${c.sort ? ' srt' : ''}${st.i === i ? ' on' : ''}" ${c.sort ? `data-sort="${i}"` : ''}>${esc(c.label)}${st.i === i ? `<i>${st.dir > 0 ? '▲' : '▼'}</i>` : ''}</th>`).join('')}</tr>`;
+    const body = d => `<tr class="g-row${d.status === 'repair' ? ' rep' : ''}" data-id="${d.id}">${cols.map(c => { const x = cellOf(c, d); return `<td class="${c.cls || ''} ${x.cls || ''}"${x.st ? ` style="--dc:${x.st}"` : ''} ${x.attr || ''}>${x.h}</td>`; }).join('')}</tr>`;
+    const rowsHtml = groups
+      ? groups.map(g => { const shut = S.shut && S.shut.has(name + g.id); return `<tr class="g-group" style="--dc:${g.color}"><td colspan="${cols.length}"><button data-group="${esc(g.id)}"><span class="car">${shut ? '▸' : '▾'}</span><b>${esc(g.title)}</b><span class="n">${g.rows.length}</span></button></td></tr>${shut ? '' : g.rows.map(body).join('')}`; }).join('')
+      : rows.map(body).join('');
+    return `<div class="grid-wrap"><table class="grid d-${density()}"><thead>${head}</thead><tbody>${rowsHtml}</tbody></table></div>`;
+  }
+  function sortRows(name, cols, rows, dflt) {
+    S.sort = S.sort || {};
+    const st = S.sort[name] || (S.sort[name] = dflt);
+    const c = cols[st.i];
+    return c && c.sort ? [...rows].sort((a, b) => st.dir * c.sort(a, b)) : rows;
+  }
+  function wireTable(name, root, redraw) {
+    $$(root + ' th[data-sort]').forEach(th => th.onclick = () => {
+      const i = +th.dataset.sort, cur = S.sort[name];
+      S.sort[name] = { i, dir: cur && cur.i === i ? -cur.dir : 1 }; redraw();
+    });
+    $$(root + ' [data-group]').forEach(b => b.onclick = () => { S.shut = S.shut || new Set(); const k = name + b.dataset.group; S.shut.has(k) ? S.shut.delete(k) : S.shut.add(k); redraw(); });
+    $$(root + ' tr.g-row').forEach(tr => tr.onclick = e => { if (!e.target.closest('button, input, textarea, .g-note.edit')) openDoor(tr.dataset.id); });
+    $$(root + ' [data-step]').forEach(b => b.onclick = e => { e.stopPropagation(); completeStep(b.dataset.id, b.dataset.step, b.dataset.num, b); });
+    $$(root + ' [data-wo]').forEach(b => b.onclick = e => { e.stopPropagation(); window.Portal.showOrder(b.dataset.wo); });
+    $$(root + ' td.g-note').forEach(td => td.onclick = e => { e.stopPropagation(); editNote(td); });
+  }
+  /** A note edited right in the table: click, type, Enter or click away to save, Escape to cancel. */
+  function editNote(td) {
+    if (td.classList.contains('edit')) return;
+    const id = td.dataset.id, old = td.dataset.note || '';
+    td.classList.add('edit');
+    td.innerHTML = `<input class="note-in" maxlength="500" value="${esc(old)}" placeholder="Add a note">`;
+    const inp = td.firstChild; inp.focus(); inp.select();
+    let done = false;
+    const finish = async save => {
+      if (done) return; done = true;
+      const v = inp.value.trim();
+      if (save && v !== old) { try { await post('note', { id, note: v }); } catch (e) { toast(e.message, true); } }
+      S.workSnap = ''; S.boardSnap = ''; refreshAll();
+    };
+    inp.onkeydown = e => { if (e.key === 'Enter') finish(true); else if (e.key === 'Escape') finish(false); };
+    inp.onblur = () => finish(true);
+  }
+  const editing = () => !!document.querySelector('.note-in');
+
+  // ---------- the order-form details each department works from ----------
+  const FIELDS = {
+    'Frame Prep': [['Panel', f => both(f.series, f.ptype)], ['Size', f => f.size], ['Swing', f => both(f.swing, f.hingeSide)], ['Hinges', f => both(f.hingeQty && f.hingeQty + '×', f.hingeFinish)], ['Prepping', f => both(f.deadbolt && 'DB ' + f.deadbolt, f.multipoint && 'MP ' + f.multipoint)],
+      ['Frame', f => both(f.frameType, f.doorFrame)], ['Jamb', f => f.jamb], ['Sill', f => both(f.sillType, f.sillDepth)], ['Brickmold', f => both(f.brickSize, f.brickType)]],
+    Paint: [['Panel out', f => f.extFinish], ['Panel in', f => f.intFinish], ['Frame out', f => f.frameOut], ['Frame in', f => f.frameIn], ['Sill', f => f.sillColour], ['Hinges', f => f.hingeFinish]],
+    Assembly: [['Panel', f => both(f.series, f.ptype)], ['Size', f => f.size], ['Glass', f => both(f.glassSize, f.glassStyle)], ['Handle', f => both(f.handleStyle, f.lever)], ['Hardware', f => f.hardware], ['Swing', f => both(f.swing, f.hingeSide)]],
+    Shipping: [['PO', f => f.po], ['Order #', f => f.orderNo], ['Size', f => f.size], ['Project', f => f.project]],
+    Office: [['PO', f => f.po], ['Order #', f => f.orderNo], ['Size', f => f.size]],
+    all: [['Size', f => f.size], ['Series', f => f.series]],
+  };
+  const fieldCols = (dept, n) => (FIELDS[dept] || FIELDS.all).slice(0, n || 99).map(([label, fn]) => ({ label, cls: 'c-f', cell: d => { const v = d.form ? fn(d.form) : ''; return v ? `<span class="fv">${esc(v)}</span>` : '<span class="faint">—</span>'; } }));
+
+  // ---------- the cells ----------
+  const dueCell = { label: 'Ships', cls: 'c-ship', sort: (a, b) => (a.shipDate || '9999').localeCompare(b.shipDate || '9999'), cell: d => { const i = due(d.shipDate); return { h: esc(dueText(d.shipDate)), cls: i.cls === 'late' ? 's-bad' : i.cls === 'soon' ? 's-wait' : '' }; } };
+  /** "Nov 17", "Tomorrow", "2 days late": short enough for a table. */
+  function dueText(shipDate) {
+    const d = due(shipDate);
+    if (d.days === null) return (d.text || '').replace(/^Ships /, '');
+    return d.days < 0 ? d.text : d.days === 0 ? 'Today' : d.days === 1 ? 'Tomorrow' : d.text.replace(/^Ships /, '').replace(/ · .*/, '');
+  }
+  const doorCol = { label: 'Door', cls: 'c-door', sort: (a, b) => nat(a.number, b.number), cell: d => `${doorLabel(d)}<span class="sub">${esc(d.customer || '')}</span>${d.status === 'repair' ? `<span class="rp" title="Out for repair">${icon('wrench')}</span>` : ''}` };
+  const custCol = { label: 'Customer', cls: 'c-cust', sort: (a, b) => nat(a.customer, b.customer), cell: d => `<span class="tx">${esc(d.customer || '—')}</span>` };
+  const stageCol = { label: 'Where', cls: 'c-stage', sort: (a, b) => (a.next ? a.next.key : 'z').localeCompare(b.next ? b.next.key : 'z') || nat(a.number, b.number),
+    cell: d => d.status === 'new' ? { h: 'Not started', cls: 's-none' } : { h: esc(d.next.dept), cls: 'dept', st: dcol(d.next.dept) } };
+  const nextCol = { label: 'Next', cls: 'c-next', cell: d => (d.next && d.status !== 'new' ? esc(d.next.qc ? 'QC' : d.next.label) : '<span class="faint">—</span>') };
+  const filesCol = { label: '', cls: 'c-ico', cell: d => (d.sourcePath ? `<button class="ico" data-wo="${esc(d.sourcePath.replace(/^Door Orders\//, ''))}" title="Open the order form" aria-label="Open the order form for ${esc(d.number)}">${icon('files')}</button>` : '') };
+  const notesCol = { label: 'Notes', cls: 'c-note', cell: d => ({ h: d.notes ? `<span class="tx">${esc(d.notes)}</span>` : '<span class="faint add">+ note</span>', cls: 'g-note', attr: `data-id="${d.id}" data-note="${esc(d.notes || '')}"` }) };
+  const stateOf = (d, kind) => {
+    const c = d.components.find(x => x.kind === kind);
+    if (!c) return { h: '—', cls: 's-none' };
+    if (c.ready_at !== null) return { h: 'Ready', cls: 's-ok' };
+    if (d.status === 'new') return { h: c.source_kind === 'external' ? 'To order' : 'Not started', cls: 's-none' };
+    return c.source_kind === 'external' ? { h: 'Ordered', cls: 's-wait' } : { h: 'Making', cls: 's-wait' };
+  };
+  const partCol = (label, kind) => ({ label, cls: 'c-part', cell: d => stateOf(d, kind) });
+  const flagsCol = { label: 'Needs a look', cls: 'c-flag', cell: d => {
+    if (d.status === 'repair') return { h: 'Repair: ' + esc(d.openDetours.map(x => x.to_dept).join(', ')), cls: 's-bad' };
+    if (d.waitingOn.length) return { h: 'Waiting: ' + esc(d.waitingOn.map(k => (KIND[k] || k).toLowerCase()).join(', ')), cls: 's-wait' };
+    if (d.status === 'new') { const left = d.checks.filter(x => !x.done_at).length; return left ? { h: left + ' part' + (left === 1 ? '' : 's') + ' to come', cls: 's-wait' } : { h: 'Ready to start', cls: 's-ok' }; }
+    return '';
+  } };
+  /** One step of a department as a column: a coloured block that says done, next (tap to finish it), or not yet. */
+  const stepCol = (s, m) => ({ label: s.qc ? 'QC' : s.label, cls: 'c-step', cell: d => {
+    const c = d.completions.find(x => x.step === s.key);
+    if (c) return c.skipped ? { h: 'n/a', cls: 's-none' } : { h: icon('check') + 'Done', cls: 's-ok' };
+    if (d.next && d.next.key === s.key && d.status !== 'new') {
+      if (d.status === 'active' && !d.waitingOn.length) return { h: `<button class="cellbtn" data-step="${s.key}" data-id="${d.id}" data-num="${esc(d.number)}">${icon('check')}${esc(doneWord(s))}</button>`, cls: 's-go' };
+      return { h: d.status === 'repair' ? 'On hold' : 'Waiting', cls: 's-wait' };
+    }
+    return { h: '·', cls: 'faint' };
+  } });
+
+  /** On a phone the step columns fold into this one: just the next step, as a big button. */
+  const actCol = (dept, m) => ({ label: 'Next', cls: 'c-act', cell: d => {
+    if (!d.next || d.status === 'new' || d.next.dept !== dept) return { h: '', cls: '' };
+    const s = stepInfo(m, d.next.key);
+    if (d.status === 'active' && !d.waitingOn.length) return { h: `<button class="cellbtn" data-step="${s.key}" data-id="${d.id}" data-num="${esc(d.number)}">${icon('check')}${esc(doneWord(s))}</button>`, cls: 's-go' };
+    return { h: d.status === 'repair' ? 'On hold' : 'Waiting', cls: 's-wait' };
+  } });
+
   // ---------- the board ----------
+  const tabsOf = m => [{ id: 'all', label: 'All doors' }, { id: 'new', label: 'Not started' }, ...m.stages.map(st => ({ id: st.dept, label: st.dept }))];
   async function loadBoard(force) {
-    if (!force && document.activeElement && document.activeElement.id === 'bd-q') return;          // don't redraw the page under someone who is typing
+    if (!force && (editing() || (document.activeElement && document.activeElement.id === 'bd-q'))) return;          // don't redraw the page under someone who is typing
     const m = await meta();
     const { doors } = await api('jobs/board');
-    const snap = JSON.stringify([doors, S.boardQ, S.boardAttn]);
+    const snap = JSON.stringify([doors, S.boardQ, S.boardAttn, S.boardTab, S.group, S.sort, density(), S.shut && [...S.shut]]);
     if (!force && snap === S.boardSnap) return;
-    S.boardSnap = snap;
+    S.boardSnap = snap; S.boardDoors = doors;
     renderBoard(m, doors);
   }
   views.board = loadBoard;
   const needsAttention = d => d.status === 'repair' || d.waitingOn.length > 0 || (due(d.shipDate).days !== null && due(d.shipDate).days < 0);
 
   function renderBoard(m, all) {
+    const tab = S.boardTab || store.get('artema.boardtab') || 'all', tabs = tabsOf(m);
+    const cur = tabs.some(t => t.id === tab) ? tab : 'all';
+    const inTab = (d, t) => t === 'all' || (t === 'new' ? d.status === 'new' : d.status !== 'new' && d.next && d.next.dept === t);
     const term = (S.boardQ || '').toLowerCase().trim();
-    const doors = all.filter(d => (!term || [d.number, d.customer, d.project].join(' ').toLowerCase().includes(term)) && (!S.boardAttn || needsAttention(d)));
-    const cols = [{ id: 'new', title: 'Not started', dept: 'Office', hint: 'Waiting for parts', rows: doors.filter(d => d.status === 'new') },
-      ...m.stages.map(st => ({ id: st.id, title: st.dept, dept: st.dept, rows: doors.filter(d => d.status !== 'new' && d.next && d.next.dept === st.dept) }))];
+    const keep = d => (!term || [d.number, d.customer, d.project, d.notes].join(' ').toLowerCase().includes(term)) && (!S.boardAttn || needsAttention(d));
+    const rows0 = all.filter(d => inTab(d, cur) && keep(d));
+
+    let cols;
+    if (cur === 'all') cols = [doorCol, filesCol, dueCell, custCol, stageCol, nextCol, partCol('Frame', 'frame'), partCol('Panel', 'panel'), partCol('Rail & stile', 'rail_stile'), flagsCol, notesCol];
+    else if (cur === 'new') cols = [doorCol, filesCol, dueCell, custCol, partCol('Frame', 'frame'), partCol('Panel', 'panel'), partCol('Rail & stile', 'rail_stile'), flagsCol, notesCol];
+    else { const st = m.stages.find(x => x.dept === cur); cols = [doorCol, filesCol, dueCell, custCol, ...m.steps.filter(x => x.stage === st.id).map(x => stepCol(x, m)), actCol(cur, m), ...fieldCols(cur), flagsCol, notesCol]; }
+    if (!rows0.some(d => d.sourcePath)) cols = cols.filter(c => c !== filesCol);
+    const rows = sortRows('board' + cur, cols, rows0, { i: cols.indexOf(dueCell), dir: 1 });
+
+    const group = cur === 'all' && S.group !== 'none';
+    const groups = group ? [{ id: 'new', title: 'Not started', color: dcol('Office'), rows: rows.filter(d => d.status === 'new') }, ...m.stages.map(st => ({ id: st.id, title: st.dept, color: dcol(st.dept), rows: rows.filter(d => d.status !== 'new' && d.next && d.next.dept === st.dept) }))].filter(g => g.rows.length) : null;
+
     const total = all.length, attn = all.filter(needsAttention).length;
+    const count = id => all.filter(d => inTab(d, id)).length;
     $('#board').innerHTML = `<div class="head"><div><div class="crumbs"><button>Board</button></div><div class="sub">${total} door${total === 1 ? '' : 's'} in the shop${attn ? ` · <b class="red">${attn} need${attn === 1 ? 's' : ''} a look</b>` : ''}</div></div></div>
-      <div class="bd-tools"><label class="search bd-search">${icon('search')}<input id="bd-q" placeholder="Find a door, customer or project" autocomplete="off" spellcheck="false" value="${esc(S.boardQ || '')}"></label>
-        <button class="bd-attn${S.boardAttn ? ' on' : ''}" id="bd-attn">${icon('alert')}Needs a look${attn ? ` (${attn})` : ''}</button></div>
-      <div class="bd-cols">${cols.map(c => `<section class="bd-col" style="--dc:${dcol(c.dept)}"><header><b>${esc(c.title)}</b><span class="n">${c.rows.length}</span></header>
-        <div class="bd-list">${c.rows.length ? c.rows.map(d => boardCard(m, d)).join('') : `<div class="bd-none">${c.id === 'new' ? 'Nothing waiting' : 'Nothing here'}</div>`}</div></section>`).join('')}</div>`;
+      <div class="bd-tabs">${tabs.map(t => `<button class="${t.id === cur ? 'on' : ''}" data-tab="${esc(t.id)}"${t.id !== 'all' && t.id !== 'new' ? ` style="--dc:${dcol(t.id)}"` : ''}>${esc(t.label)}<span class="n">${count(t.id)}</span></button>`).join('')}</div>
+      <div class="bd-tools"><label class="search bd-search">${icon('search')}<input id="bd-q" placeholder="Find a door, customer, project or note" autocomplete="off" spellcheck="false" value="${esc(S.boardQ || '')}"></label>
+        <button class="bd-attn${S.boardAttn ? ' on' : ''}" id="bd-attn">${icon('alert')}Needs a look${attn ? ` (${attn})` : ''}</button>
+        ${cur === 'all' ? `<button class="bd-attn${group ? ' on2' : ''}" id="bd-group">Group by where it is: ${group ? 'On' : 'Off'}</button>` : ''}
+        <span class="grow"></span>${densityBar('board')}</div>
+      ${rows0.length ? tableHtml('board' + cur, cols, rows, groups) : `<div class="empty"><div class="ring">${icon('board')}</div><h3>${term || S.boardAttn ? 'Nothing matches' : 'Nothing here'}</h3><div>${term || S.boardAttn ? 'Try fewer words, or turn off “Needs a look”.' : 'Doors show up here as they move through the shop.'}</div></div>`}`;
+    $$('#board [data-tab]').forEach(b => b.onclick = () => { S.boardTab = b.dataset.tab; store.set('artema.boardtab', b.dataset.tab); S.boardSnap = ''; loadBoard(true); });
     const inp = $('#bd-q');
     inp.oninput = () => { S.boardQ = inp.value; S.boardSnap = ''; const pos = inp.selectionStart; loadBoard(true).then(() => { const n = $('#bd-q'); if (n) { n.focus(); n.setSelectionRange(pos, pos); } }); };
     $('#bd-attn').onclick = () => { S.boardAttn = !S.boardAttn; S.boardSnap = ''; loadBoard(true); };
-    $$('#board .bd-card').forEach(c => { c.onclick = () => openDoor(c.dataset.id); c.onkeydown = e => { if (e.key === 'Enter') openDoor(c.dataset.id); }; });
-  }
-  function boardCard(m, d) {
-    const badges = [];
-    if (d.status === 'repair') badges.push(`<span class="bg red">${icon('wrench')}Repair at ${esc(d.openDetours.map(x => x.to_dept).join(', '))}</span>`);
-    if (d.waitingOn.length) badges.push(`<span class="bg amber">Waiting for ${esc(d.waitingOn.map(k => (KIND[k] || k).toLowerCase()).join(', '))}</span>`);
-    if (d.status === 'new') { const left = d.checks.filter(x => !x.done_at).length; badges.push(`<span class="bg ${left ? 'amber' : 'green'}">${left ? left + ' part' + (left === 1 ? '' : 's') + ' to come' : 'Ready to start'}</span>`); }
-    return `<div class="bd-card${d.status === 'repair' ? ' rep' : ''}" data-id="${d.id}" tabindex="0">
-      <div class="bd-r1"><span class="doorpill">${esc(d.number)}</span>${dueShort(d.shipDate)}</div>
-      <div class="bd-cu">${esc(d.customer || 'No customer')}</div>
-      ${d.project && d.projectTotal > 1 ? `<div class="bd-pr">${esc(d.project)} · ${d.projectIndex} of ${d.projectTotal}</div>` : ''}
-      ${d.next && d.status !== 'new' ? `<div class="bd-nx">Next: ${esc(d.next.qc ? 'QC' : d.next.label)}</div>` : ''}${badges.length ? `<div class="bd-bg">${badges.join('')}</div>` : ''}</div>`;
+    if ($('#bd-group')) $('#bd-group').onclick = () => { S.group = group ? 'none' : 'stage'; S.boardSnap = ''; loadBoard(true); };
+    wireDensity('board', () => { S.boardSnap = ''; loadBoard(true); });
+    wireTable('board' + cur, '#board', () => { S.boardSnap = ''; loadBoard(true); });
   }
 
   // ---------- adding order forms to the shop ----------

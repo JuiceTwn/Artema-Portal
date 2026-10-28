@@ -109,6 +109,13 @@ function makeForm(file, { door, customer = 'Evolve Windows & Doors', project = '
     check('the board lists every unfinished door', r.body.doors.length === 3 && r.body.doors.find(d => d.number === '26-611').status === 'active');
     r = await get('jobs/door?id=26-611');
     check('a door\'s page has its history in order', r.body.events.length > 8 && r.body.events[0].kind === 'detour.closed');
+    r = await get('jobs/board');
+    const b611 = r.body.doors.find(d => d.number === '26-611');
+    check('the board carries each door\'s order-form details for the department tables', b611.form && b611.form.customer === 'Evolve Windows & Doors' && b611.form.series === 'Richersons Smooth skin', b611.form);
+    r = await post('jobs/note', { id: '26-611', note: '  Check hinge prep  ', dept: 'Frame Prep' });
+    check('a note is saved on the door and shown with it', r.status === 200 && r.body.door.notes === 'Check hinge prep', r.body);
+    r = await get('jobs/door?id=26-611');
+    check('the note change is in the door\'s history', r.body.events.some(e => e.kind === 'note.set' && e.dept === 'Frame Prep'));
     r = await get('jobs/queue?dept=Wizards');
     check('an unknown department is refused', r.status === 400);
 

@@ -19,15 +19,25 @@ function wrap(fn) {
   }
 }
 
+/**
+ * Each door with the details read from its order form (size, colours, frame...), so a department's table can show what that
+ * department works from. A form that can't be read just leaves `form` empty.
+ */
+function withForms(orders, doors) {
+  let byPath = new Map();
+  if (orders) { try { byPath = new Map(orders.list().filter(o => !o.error).map(o => [o.path, o.f])); } catch { /* forms unreadable: tables still work */ } }
+  return doors.map(d => ({ ...d, form: byPath.get(d.sourcePath) || null }));
+}
+
 const str = v => (typeof v === 'string' ? v : v == null ? '' : String(v));
 
 /** Handles a GET; returns the JSON to send. */
-function get(jobs, ep, q) {
+function get(jobs, orders, ep, q) {
   if (!jobs || !jobs.ok) throw new HttpError(503, 'Jobs are unavailable right now. Ask whoever looks after the Portal.');
   return wrap(() => {
     if (ep === 'jobs/meta') return { stages: STAGES, steps: STEPS, actors: ACTORS, reasons: REPAIR_REASONS, defaults: DEFAULT_CHOICES };
-    if (ep === 'jobs/board') return { doors: jobs.board() };
-    if (ep === 'jobs/queue') return jobs.queue(str(q.dept));
+    if (ep === 'jobs/board') return { doors: withForms(orders, jobs.board()) };
+    if (ep === 'jobs/queue') { const r = jobs.queue(str(q.dept)); return { ...r, work: withForms(orders, r.work) }; }
     if (ep === 'jobs/door') { const door = jobs.door(str(q.id)); return { door, events: jobs.events(40, door.id) }; }
     throw new HttpError(404, 'Not found');
   });
@@ -56,6 +66,7 @@ function post(jobs, orders, ep, b) {
       }
       return { ok: true, added, skipped };
     }
+    if (ep === 'jobs/note') { jobs.setNote(str(b.id), str(b.note), dept, who); return withDoor(str(b.id)); }
     if (ep === 'jobs/check') { jobs.setCheck(str(b.id), str(b.item), b.done !== false, dept, who); return withDoor(str(b.id)); }
     if (ep === 'jobs/ready') { jobs.setComponentReady(str(b.id), str(b.kind), b.ready !== false, dept, who); return withDoor(str(b.id)); }
     if (ep === 'jobs/release') { jobs.release(str(b.id), dept, who); return withDoor(str(b.id)); }
