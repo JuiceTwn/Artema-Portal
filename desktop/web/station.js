@@ -20,7 +20,10 @@
 
   // ---------- which stations does this computer work at? ----------
   const KEY = 'artema.stations';
-  const mine = () => { try { const a = JSON.parse(K.store.get(KEY) || '[]'); return Array.isArray(a) ? a.map(String) : []; } catch { return []; } };
+  const local = () => { try { const a = JSON.parse(K.store.get(KEY) || '[]'); return Array.isArray(a) ? a.map(String) : []; } catch { return []; } };
+  /** Stations an admin assigned to this computer (Computers screen). They win over what was picked here, and a Switch only lasts until the page is reopened. */
+  const assigned = () => ((S.me && S.me.stations) || []).map(String);
+  const mine = () => (S.stationTemp && S.stationTemp.length ? S.stationTemp : assigned().length ? assigned() : local());
   const remember = ids => { K.store.set(KEY, JSON.stringify(ids)); K.store.set('artema.seen.st', ''); applySimple(); };
   /** On a computer with stations the menu is just Home and Station; everything else is behind "More". */
   function applySimple() {
@@ -29,7 +32,7 @@
   }
   applySimple();
   const oldStart = window.Portal.jobs.startView;
-  window.Portal.jobs.startView = () => (mine().length ? 'station' : oldStart());
+  window.Portal.jobs.startView = () => { applySimple(); return mine().length ? 'station' : oldStart(); };
   const more = $('#more-toggle'); if (more) more.onclick = () => { document.body.classList.toggle('more'); applySimple(); };
 
   const seenIds = doors => {
@@ -41,6 +44,8 @@
 
   async function load(force) {
     if (!force && (document.querySelector('dialog.pick[open]') || $('#pop'))) return;
+    try { S.me = await api('me'); } catch { /* keep what we know */ }          // an admin may have just assigned this computer
+    applySimple();
     const cfg = await api('jobs/board');
     K.applyGuided(cfg.guided);
     const snap = JSON.stringify([cfg, mine(), S.stationPicking, S.stationShowDone]);
@@ -59,22 +64,45 @@
     const opts = cfg.views.filter(v => stationFields(v, cfg).length);          // a tab with no status columns is not a place anyone works
     const host = $('#station');
     const draw = () => {
-      host.innerHTML = `<div class="st-pick"><h1>Where are you working?</h1><div class="st-sub">Tap your station. If you do more than one, tap them all. This computer remembers it, and you will see only that.</div>
+      host.innerHTML = `<div class="st-pick"><h1>Where are you working?</h1><div class="st-sub">${assigned().length ? 'Tap the station you are covering. This is just for now: when this computer is reopened it goes back to the one an admin gave it.' : 'Tap your station. If you do more than one, tap them all. This computer remembers it, and you will see only that.'}</div>
         <div class="st-grid">${opts.map(v => { const n = waiting(v, cfg).length; return `<button class="st-opt${pick.has(String(v.id)) ? ' on' : ''}" data-v="${v.id}"><b>${esc(v.name)}</b><span>${n ? n + ' waiting' : 'nothing waiting'}</span></button>`; }).join('')}</div>
         ${opts.length ? '' : '<div class="empty-note">No stations yet. An admin sets them up from the Board (Customize).</div>'}
         <div class="st-pick-foot"><button class="btn primary big" id="st-go"${pick.size ? '' : ' disabled'}>${icon('check')}Use ${pick.size > 1 ? 'these stations' : 'this station'}</button>
-          ${chosen.length ? '<button class="link" id="st-cancel">Never mind</button>' : ''}<button class="link" id="st-office">I'm in the office: show me everything</button></div></div>`;
+          ${chosen.length ? '<button class="link" id="st-cancel">Never mind</button>' : ''}${assigned().length ? '' : '<button class="link" id="st-office">I\'m in the office: show me everything</button>'}</div></div>`;
       $$('#station [data-v]').forEach(b => b.onclick = () => { const k = b.dataset.v; pick.has(k) ? pick.delete(k) : pick.add(k); draw(); });
       $('#st-go').onclick = () => {
-        remember([...pick]);
+        if (assigned().length) S.stationTemp = [...pick]; else remember([...pick]);
         if (!K.myDept()) { const names = opts.filter(v => pick.has(String(v.id))).map(v => v.name).join(' '); const hit = DEPT_FOR.find(([re]) => re.test(names)); if (hit) K.store.set('artema.jobdept', hit[1]); }          // one less question on a shared computer
         S.stationPicking = false; redraw();
       };
       if ($('#st-cancel')) $('#st-cancel').onclick = () => { S.stationPicking = false; redraw(); };
-      $('#st-office').onclick = () => { remember([]); S.stationPicking = false; window.Portal.setView('board'); };
+      if ($('#st-office')) $('#st-office').onclick = () => { remember([]); S.stationPicking = false; window.Portal.setView('board'); };
     };
     draw();
   }
+
+  // ---------- admins: give a computer its stations (Computers screen) ----------
+  /** Opens a picker of stations for one computer and saves the choice. Resolves to true when something was saved. */
+  async function assignStations({ id, name, current, choices }) {
+    const pick = new Set(current.map(String));
+    const res = await K.modal({
+      title: `Where does ${name} work?`, ok: 'Save', wide: true,
+      html: '<div id="as-body"></div>',
+      mount: el => {
+        const host = $('#as-body', el);
+        const draw = () => {
+          host.innerHTML = `<p>It will open on these stations and show only them. Leave all off to let whoever uses it choose.</p>
+            <div class="st-grid">${choices.map(c => `<button type="button" class="st-opt${pick.has(String(c.id)) ? ' on' : ''}" data-v="${c.id}"><b>${esc(c.name)}</b></button>`).join('')}</div>`;
+          $$('[data-v]', host).forEach(b => b.onclick = () => { const k = b.dataset.v; pick.has(k) ? pick.delete(k) : pick.add(k); draw(); });
+        };
+        draw();
+      },
+      collect: () => [...pick].map(Number),
+    });
+    if (!res) return false;
+    try { await api('devices/stations', { id, stations: res }); toast(res.length ? `${name} now opens on ${res.map(i => (choices.find(c => c.id === i) || {}).name).join(', ')}` : `${name} has no station`); return true; } catch (e) { toast(e.message, true); return false; }
+  }
+  window.Portal.jobs.assignStations = assignStations;
 
   // ---------- the queue ----------
   function render(cfg, chosen) {

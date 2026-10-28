@@ -33,6 +33,8 @@ function createPortalServer(store, port, webDir, hooks = {}) {
   const trustLoopback = () => (hooks.trustLoopback ? hooks.trustLoopback() : true);
   const pinGuess = new FailLimiter(10, 10 * 60 * 1000);          // 10 wrong PINs from one address, then a 10-minute pause
 
+  /** The tabs a computer can be assigned to (none when jobs are unavailable). */
+  const stationChoices = () => { try { return hooks.jobs && hooks.jobs.ok ? hooks.jobs.stationChoices() : []; } catch { return []; } };
   function authenticate(req) {
     if (isLoopback(req) && trustLoopback()) return { kind: 'host', name: store.hostName, role: 'dev' };
     const a = store.authToken(bearer(req) || parseCookies(req.headers.cookie)[COOKIE]);
@@ -92,7 +94,10 @@ function createPortalServer(store, port, webDir, hooks = {}) {
       const need = action => { if (!can(auth.role, action)) throw new HttpError(403, "This computer's role doesn't allow that"); };
 
       if (req.method === 'GET') {
-        if (ep === 'me') return sendJson(res, { kind: auth.kind, name: auth.name, role: auth.role, tag: (auth.id && store.devices[auth.id] && store.devices[auth.id].tag) || '' });
+        if (ep === 'me') {
+          const ok = new Set(stationChoices().map(c => c.id));
+          return sendJson(res, { kind: auth.kind, name: auth.name, role: auth.role, tag: (auth.id && store.devices[auth.id] && store.devices[auth.id].tag) || '', stations: ((auth.id && store.devices[auth.id] && store.devices[auth.id].stations) || []).filter(x => ok.has(x)) });
+        }
         if (ep.startsWith('orders')) {
           if (!hooks.orders) throw new HttpError(404, 'Not found');
           if (ep === 'orders') return sendJson(res, { items: hooks.orders.list(), departments: DEPARTMENTS, inShop: hooks.jobs && hooks.jobs.ok ? hooks.jobs.numbers() : [] });
@@ -117,7 +122,11 @@ function createPortalServer(store, port, webDir, hooks = {}) {
         if (ep === 'list') return sendJson(res, { path: store.safe(q.path).rel, items: store.list(q.path) });
         if (ep === 'tree') return sendJson(res, { items: store.tree() });
         if (ep === 'search') return sendJson(res, { items: store.search(q.q) });
-        if (ep === 'devices') return sendJson(res, { departments: DEPARTMENTS, devices: store.deviceList().map(d => ({ ...d, role: d.host ? 'dev' : roles.get(d.id) })), address: `${lanIp()}:${port}` });
+        if (ep === 'devices') {
+          const choices = stationChoices();
+          const ok = new Set(choices.map(c => c.id));
+          return sendJson(res, { departments: DEPARTMENTS, stationChoices: choices, devices: store.deviceList().map(d => ({ ...d, stations: (d.stations || []).filter(x => ok.has(x)), role: d.host ? 'dev' : roles.get(d.id) })), address: `${lanIp()}:${port}` });
+        }
         if (ep === 'devices/history') {
           need('devices.role');
           const names = Object.fromEntries(store.deviceList().map(d => [d.id, d.name]));
@@ -177,6 +186,16 @@ function createPortalServer(store, port, webDir, hooks = {}) {
           store.setTag(String(b.id), dept);
           log(`department: ${store.devices[String(b.id)].name} is now ${dept || 'none'} (set by ${who})`);
           return sendJson(res, { ok: true, department: dept });
+        }
+        if (ep === 'devices/stations') {
+          need('devices.tag');          // like departments: handed out by admins and the main computer
+          const id = String(b.id), d = store.devices[id];
+          if (!d) throw new HttpError(404, 'Not found');
+          const ok = new Set(stationChoices().map(c => c.id)), ids = (Array.isArray(b.stations) ? b.stations : []).map(Number);
+          if (!ids.every(x => ok.has(x))) throw new HttpError(400, 'Unknown station');
+          store.setStations(id, ids);
+          log(`stations: ${d.name} now opens on ${ids.length ? stationChoices().filter(c => ids.includes(c.id)).map(c => c.name).join(', ') : 'nothing in particular'} (set by ${who})`);
+          return sendJson(res, { ok: true, stations: ids });
         }
         if (ep === 'devices/tag') { need('devices.tag'); store.setTag(String(b.id), b.tag); return sendJson(res, { ok: true }); }
         if (ep === 'devices/role') {

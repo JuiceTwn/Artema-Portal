@@ -255,6 +255,13 @@ class Store {
     writeJson(this.devicesPath, this.devices, 0o600);
   }
 
+  /** The board tabs (stations) a computer opens on, as ids. Admins assign them; the computer shows only those until told otherwise. */
+  setStations(id, ids) {
+    if (!this.devices[id]) throw new HttpError(404, 'Not found');
+    this.devices[id].stations = [...new Set((Array.isArray(ids) ? ids : []).map(Number).filter(n => Number.isInteger(n) && n > 0))].slice(0, 20);
+    writeJson(this.devicesPath, this.devices, 0o600);
+  }
+
   /** Adds (or re-adds) a computer and gives it a fresh token. The token is returned once; only its hash is kept. */
   register(name, ip, existingId, tag) {
     name = cleanName(name, 40);
@@ -265,7 +272,7 @@ class Store {
     const id = existingId && this.devices[existingId] ? existingId : crypto.randomBytes(6).toString('hex');
     const prev = this.devices[id] || {};
     const token = newToken();
-    this.devices[id] = { name, ip, added: prev.added || Math.floor(nowSec()), tag: prev.tag || cleanName(tag, 20), th: hashToken(token) };
+    this.devices[id] = { name, ip, added: prev.added || Math.floor(nowSec()), tag: prev.tag || cleanName(tag, 20), stations: prev.stations || [], th: hashToken(token) };
     this.reindex();
     writeJson(this.devicesPath, this.devices, 0o600);
     this.seen.set(id, nowSec());
@@ -280,7 +287,7 @@ class Store {
     const t = nowSec();
     for (const [id, d] of Object.entries(this.devices)) {
       const last = this.seen.get(id);
-      out.push({ id, name: d.name, ip: d.ip || '', tag: d.tag || '', version: this.versions.get(id) || '', host: false, online: !!(last && t - last < ONLINE_SECONDS), last: last ? Math.floor(last) : null });
+      out.push({ id, name: d.name, ip: d.ip || '', tag: d.tag || '', stations: d.stations || [], version: this.versions.get(id) || '', host: false, online: !!(last && t - last < ONLINE_SECONDS), last: last ? Math.floor(last) : null });
     }
     return out;
   }

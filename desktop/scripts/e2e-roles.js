@@ -54,6 +54,19 @@ const mk = tag => {
     check('general cannot assign roles', (await call(G, 'POST', 'devices/role', { id: ids.g, role: 'dev' })).status === 403);
     check('general still has the ordinary file features', (await call(G, 'GET', 'list')).status === 200 && (await call(G, 'GET', 'devices')).status === 200);
 
+    // ---- stations: which board tabs a computer opens on (assigned from the Computers screen)
+    r = await call('host', 'GET', 'devices'); const choices = r.body.stationChoices || [];
+    check('the computers list offers the stations that can be assigned', r.status === 200 && choices.length >= 1 && choices.every(c => c.id && c.name), r.body.stationChoices);
+    const st0 = choices[0].id;
+    check('general cannot assign stations', (await call(G, 'POST', 'devices/stations', { id: ids.g, stations: [st0] })).status === 403);
+    check('the main computer can', (await call('host', 'POST', 'devices/stations', { id: ids.g, stations: [st0] })).status === 200);
+    r = await call(G, 'GET', 'me'); check('the computer is told its stations on the very next request', JSON.stringify(r.body.stations) === JSON.stringify([st0]), r.body);
+    check('an unknown station is refused', (await call('host', 'POST', 'devices/stations', { id: ids.g, stations: [999999] })).status === 400);
+    check('an unknown computer is a clean 404', (await call('host', 'POST', 'devices/stations', { id: 'nope', stations: [] })).status === 404);
+    check('another computer is not told someone else\'s stations', (await call(B, 'GET', 'me')).body.stations.length === 0);
+    r = await call('host', 'GET', 'devices'); check('the list shows who has which', r.body.devices.find(d => d.id === ids.g).stations.join() === String(st0));
+    check('clearing them leaves the computer with none', (await call('host', 'POST', 'devices/stations', { id: ids.g, stations: [] })).status === 200 && (await call(G, 'GET', 'me')).body.stations.length === 0);
+
     // ---- the main computer promotes
     check('the main computer can make a computer admin', (await call('host', 'POST', 'devices/role', { id: ids.a, role: 'admin' })).status === 200);
     r = await call(A, 'GET', 'me'); check('the change applies on the very next request', r.body.role === 'admin', r);

@@ -83,6 +83,11 @@ function install(JobStore, { actor, text, bad, now }) {
       }));
     },
     views() { return this.need().prepare('SELECT id, name, cols, filter FROM views ORDER BY position, id').all().map(v => ({ id: v.id, name: v.name, cols: JSON.parse(v.cols), filter: JSON.parse(v.filter || '[]') })); },
+    /** The tabs a computer can be assigned to: those with a status column, so there is something to do there. */
+    stationChoices() {
+      const status = new Set(this.fields().filter(f => f.kind === 'status').map(f => '#' + f.id));
+      return this.views().filter(v => v.cols.some(c => status.has(c))).map(v => ({ id: v.id, name: v.name }));
+    },
     /** Everything a screen needs to draw the board's columns and tabs. */
     config() { return { ...this.settings(), fields: this.fields(), views: this.views(), rules: this.rules(), needs: this.needsConfig(), palette: PALETTE }; },
 

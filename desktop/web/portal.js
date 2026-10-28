@@ -113,6 +113,7 @@
     if (params.get('as')) { store.set('artema.who', params.get('as')); history.replaceState(null, '', location.pathname); }
     S.who = store.get('artema.who') || '';
     if (!S.who && S.info?.local) { S.who = S.info.name; store.set('artema.who', S.who); }
+    if (!S.who) { try { const m = await api('me'); if (m && m.kind === 'device' && m.name) { S.who = m.name; store.set('artema.who', S.who); } } catch { /* ask below */ } }          // a joined computer already has a name: no question on a shared floor PC
     if (!S.who) {
       const v = await ask({ title: 'Welcome to Artema Portal', text: "What should we call you? It's shown next to the files you add.", value: '', ok: 'Continue' });
       S.who = v || 'Guest';
@@ -507,7 +508,7 @@
   }
 
   async function loadComputers() {
-    const { devices, address, departments = [] } = await api('devices');
+    const { devices, address, departments = [], stationChoices = [] } = await api('devices');
     if (document.activeElement?.matches?.('.role-sel')) return;          // don't pull a dropdown away while someone is choosing
     const me = S.role = (await api('me')).role;
     const manage = rankOf(me) >= 1;           // admins and the main computer run the suite; everyone else just sees who is connected
@@ -525,10 +526,15 @@
       ['Dev', count('dev') + (devices.some(d => d.host) ? 1 : 0), 'full control', '#8f2c30'],
     ].map(([k, v, s, c]) => `<div class="tile-stat" style="--sc:${c}"><div class="k">${k}</div><div class="v">${v}</div><div class="s">${s}</div></div>`).join('');
 
+    const stationNames = d => (d.stations || []).map(i => (stationChoices.find(c => c.id === i) || {}).name).filter(Boolean).join(', ');
+    const stationLine = (d, canEdit) => canEdit && stationChoices.length
+      ? `<button class="st-assign" data-stations-of="${esc(d.id)}" data-name="${esc(d.name)}" data-cur="${esc(JSON.stringify(d.stations || []))}" aria-label="Stations for ${esc(d.name)}">${icon('work')}<span>${esc(stationNames(d) || 'Set station')}</span></button>`
+      : stationNames(d) ? `<div class="muted sm">${esc(stationNames(d))}</div>` : '';
     const rows = devices.map(d => `
       <div class="trow${d.online ? '' : ' off'}">
         <div class="who"><div class="pc">${icon('monitor')}</div><div class="nm"><b>${esc(d.name)}</b>${d.host ? '<span class="badge">Main</span>' : ''}
-          <div class="muted sm">${esc(d.ip || '')}${d.version ? ` · v${esc(d.version)}` : ''}</div></div></div>
+          <div class="muted sm">${esc(d.ip || '')}${d.version ? ` · v${esc(d.version)}` : ''}</div>
+          ${d.host ? '' : stationLine(d, manage)}</div></div>
         <div class="state"><span class="dot ${d.online ? '' : 'idle'}"></span>${d.online ? 'Online' : d.last ? 'Seen ' + ago(d.last) : 'Offline'}</div>
         <div class="lvl">${d.host ? '<span class="rolechip r-dev">Dev</span>' : manage ? roleSelect(d, me) : `<span class="rolechip r-${d.role}">${roleName(d.role)}</span>`}</div>
         <div class="lvl">${d.host ? '<span class="muted sm">Main computer</span>' : manage ? `<select class="role-sel dept-sel" data-deptof="${esc(d.id)}" data-name="${esc(d.name)}" data-cur="${esc(d.tag || '')}" aria-label="Department for ${esc(d.name)}"><option value="">No department</option>${departments.map(x => `<option value="${esc(x)}"${x === d.tag ? ' selected' : ''}>${esc(x)}</option>`).join('')}</select>` : d.tag ? `<span class="tagchip">${esc(d.tag)}</span>` : '<span class="muted sm">\u2014</span>'}</div>
@@ -595,6 +601,10 @@
       const { deptof: id, name } = sel.dataset;
       try { await api('devices/department', { id, dept: sel.value }); toast(sel.value ? `${name} is now in ${sel.value}` : `${name} has no department`); } catch (e) { toast(e.message, true); }
       loadComputers();
+    });
+    $$('[data-stations-of]').forEach(b => b.onclick = async () => {
+      const done = await window.Portal.jobs.assignStations({ id: b.dataset.stationsOf, name: b.dataset.name, current: JSON.parse(b.dataset.cur || '[]'), choices: stationChoices });
+      if (done) loadComputers();
     });
     $$('[data-rm]').forEach(b => b.onclick = async () => {
       if (await ask({ title: `Remove ${b.dataset.name}?`, text: 'That computer will stop syncing until it connects again.', ok: 'Remove', danger: true })) {
