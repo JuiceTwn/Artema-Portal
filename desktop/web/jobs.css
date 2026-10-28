@@ -482,3 +482,5 @@ body.simple:not(.more) .side .dept-line { display: none; }
   #station .st-stuck:hover { background: rgba(239, 106, 99, .12); }
   #station .st-more:hover, .st-switch:hover { background: rgba(251, 238, 223, .07); }
 }
+#station .st-onotes { padding: 8px 12px; border-radius: 10px; background: rgba(204, 125, 20, .12); border-left: 4px solid var(--amber); font-size: 15px; white-space: pre-line; overflow-wrap: anywhere; }
+#station .st-onotes i { display: block; font-style: normal; font-size: 11px; letter-spacing: .1em; text-transform: uppercase; color: var(--amber-hi); margin-bottom: 2px; }

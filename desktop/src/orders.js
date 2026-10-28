@@ -84,6 +84,24 @@ function valueOf(ws, idx, label, XLSX, { below = false, multi = false } = {}) {
 
 const doorFromName = name => { const m = /(\d{2}-\d{1,4})/.exec(name); return m ? m[1] : ''; };
 
+/**
+ * The form's free-text "Other Notes": the first line sits beside the label, and more lines are written below it (in columns C to H,
+ * down to "Please Sign"). They hold what a station must know (supply the keypad, cutout positions) and past corrections, so they are
+ * read as one text with a line per row.
+ */
+function orderNotes(ws, idx, XLSX) {
+  const at = (idx.get('other notes') || [])[0];
+  if (!at) return '';
+  const lines = [];
+  for (let r = at.r; r <= at.r + 14; r++) {
+    if (r > at.r && /^please sign/i.test(clean(cellText(ws, r, 2, XLSX)))) break;
+    const row = [];
+    for (let c = r === at.r ? at.c + 1 : 2; c <= 7; c++) { const t = clean(cellText(ws, r, c, XLSX)); if (t && !isBlank(t)) row.push(t); }
+    if (row.length) lines.push(row.join(' · '));
+  }
+  return lines.join('\n').slice(0, 800);
+}
+
 class Orders {
   /** `root` is the Portal's shared folder. `xlsx` is passed in so the (large) library is only loaded when orders are used. */
   constructor(root, xlsx) { this.root = root; this.XLSX = xlsx; this.cache = new Map(); this.sums = new Map(); }
@@ -144,6 +162,7 @@ class Orders {
       if (!ws || !(idx.has('panel series') || idx.has('hinge side'))) return { ...base, error: 'This does not look like a door order form' };
       const out = {};
       for (const [key, [label, opts]] of Object.entries(FIELDS)) { const v = valueOf(ws, idx, label, this.XLSX, opts); out[key] = isBlank(v) ? '' : v; }
+      out.orderNotes = orderNotes(ws, idx, this.XLSX);
       out.size = out.width || out.height ? `${out.width || '?'} × ${out.height || '?'}` : '';
       const door = valueOf(ws, idx, 'Door Number', this.XLSX);
       return { ...base, door: door && !isBlank(door) ? door : base.door, f: out };

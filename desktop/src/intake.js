@@ -44,8 +44,8 @@ function doorFromOrder(summary, choices = {}) {
     if (!s) throw new HttpError(400, `Unknown choice for ${kind}`);
     components.push({ kind, sourceKind: s[0], source: s[1] });
   }
-  // the form does not say outright whether a door is rail & stile; the panel type or series usually does. The office can correct it on the door.
-  const needs = { rs: /rail|stile|\br\s*&\s*s\b/i.test(`${f.ptype || ''} ${f.series || ''}`) };
+  // the form does not say outright whether a door is rail & stile; the panel type usually does: "Flush" is a skin door, "2 panel" (or 3, 4...) is rail & stile. The office can correct it on the door.
+  const needs = { rs: /rail|stile/i.test(`${f.ptype || ''} ${f.series || ''}`) || /\b\d+\s*panel\b/i.test(f.ptype || '') };
   return { needs, number: door, project: f.project || '', customer: f.customer || '', shipDate: normDate(f.ship), sourcePath: summary.path || '', components };
 }
 

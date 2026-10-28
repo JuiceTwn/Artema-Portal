@@ -131,6 +131,7 @@
           <span class="due ${due.cls}">${esc(K.dueText(d.shipDate))}</span></div>
         ${info ? `<div class="st-info">${info}</div>` : ''}
         ${d.notes ? `<div class="st-note">${esc(d.notes)}</div>` : ''}
+        ${d.form && d.form.orderNotes ? `<div class="st-onotes"><i>From the order form</i>${esc(d.form.orderNotes)}</div>` : ''}
         <div class="st-rows">${rows || '<div class="faint">This station has no status column. Ask an admin to add one.</div>'}</div>
         <div class="st-foot"><button class="st-stuck" data-stuck="${d.id}">${icon('alert')}Stuck</button><button class="st-more" data-open="${d.id}">Details</button></div>
       </article>`;

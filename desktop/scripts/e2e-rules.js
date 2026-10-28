@@ -186,6 +186,24 @@ try {
   js.deleteField(F('QC').id, 'Office', '');
   check('a tab loses a condition on a deleted column rather than keep pointing at it', js.views().every(v => v.filter.every(c => js.fields().some(f => f.id === c.field) && (c.with || []).every(x => js.fields().some(f => f.id === x)))));
   check('a rule that watched a deleted column is switched off', js.rules().find(r => r.name === 'Needs QC').enabled === false);
+  // the order form's free-text notes, and rail & stile read from the panel type (as on the shop's real forms)
+  {
+    const XLSX = require('xlsx'), { Orders } = require('../src/orders'), { doorFromOrder } = require('../src/intake');
+    const root = path.join(T, 'orders'); fs.mkdirSync(path.join(root, 'Door Orders'), { recursive: true });
+    const make = (door, ptype, notes) => {
+      const ws = {}, put = (a, v) => { ws[a] = { t: 's', v, w: String(v) }; };
+      put('I4', 'Customer Name:'); put('J4', 'Acme'); put('I19', 'Panel Series'); put('J19', 'Mastergrain'); put('I20', 'Panel type:'); put('J20', ptype);
+      put('I8', 'Target Ship Date:'); put('J8', 'September 24, 2026'); put('I45', 'Door Number:'); put('J45', door); put('B20', 'Hinge Side:'); put('E20', 'RH');
+      put('B46', 'Other Notes:'); put('E46', notes[0]); put('C48', notes[1]); put('C51', notes[2]); if (notes[2]) put('H51', '10 MIN'); put('J47', 'Frame'); put('C58', 'Please Sign & date to confirm');
+      ws['!ref'] = 'A1:AM70';
+      XLSX.writeFile({ SheetNames: ['Main Order Form'], Sheets: { 'Main Order Form': ws } }, path.join(root, 'Door Orders', `Door ${door}.xlsx`), { bookType: 'xlsx' });
+    };
+    make('26-901', '2 panel', ['install lock', 'send capping separate', 'Trimmed 5/8" off panel CH']); make('26-902', 'Flush', ['-', '', '']);
+    const o = new Orders(root, XLSX), list = o.list(), a = list.find(x => x.door === '26-901'), b = list.find(x => x.door === '26-902');
+    check('the form\'s Other Notes are read, one line per row, stopping before "Please Sign"', a.f.orderNotes === 'install lock\nsend capping separate\nTrimmed 5/8" off panel CH · 10 MIN', a.f.orderNotes);
+    check('a form with no notes has none', b.f.orderNotes === '');
+    check('"2 panel" reads as rail & stile and "Flush" does not', doorFromOrder(a).needs.rs === true && doorFromOrder(b).needs.rs === false);
+  }
   js.close();
 } catch (e) {
   console.log('FAIL unexpected error: ' + (e && e.stack || e));
