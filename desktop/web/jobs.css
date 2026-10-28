@@ -463,3 +463,22 @@ body.simple:not(.more) .side .dept-line { display: none; }
   #station .st-card > .st-foot { grid-column: 2; flex-direction: column; justify-content: flex-end; gap: 8px; }
   #station .st-stuck, #station .st-more { min-height: 44px; min-width: 120px; justify-content: center; }
 }
+
+/* ---------- a mouse needs smaller targets than a finger: denser cards, and the row under the pointer lights up ---------- */
+@media (pointer: fine) {
+  #station .st-card { padding: 12px 16px; gap: 10px; }
+  #station .st-num { font-size: 28px; }
+  #station .st-cust { font-size: 16px; }
+  #station .st-top .due { font-size: 14px; padding: 5px 12px; }
+  #station .st-cur, #station .st-done { min-height: 46px; font-size: 17px; border-radius: 10px; }
+  #station .st-done { padding: 0 22px; }
+  #station .st-stuck, #station .st-more { min-height: 36px; min-width: 96px; font-size: 14px; }
+  #station .st-row { gap: 8px; }
+  .st-opt { min-height: 68px; }
+  #station .st-card:hover { border-color: var(--line-strong); }
+  #station .st-card.first:hover { border-color: var(--amber-hi); }
+  #station .st-done:hover { filter: brightness(1.1); }
+  #station .st-cur:hover { filter: brightness(1.15); }
+  #station .st-stuck:hover { background: rgba(239, 106, 99, .12); }
+  #station .st-more:hover, .st-switch:hover { background: rgba(251, 238, 223, .07); }
+}
