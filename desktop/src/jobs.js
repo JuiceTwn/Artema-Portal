@@ -69,6 +69,7 @@ const MIGRATIONS = {
       at      INTEGER NOT NULL,
       dept    TEXT    NOT NULL,
       who     TEXT    NOT NULL DEFAULT '',
+      skipped INTEGER NOT NULL DEFAULT 0,
       PRIMARY KEY (door_id, step)
     ) WITHOUT ROWID;
     CREATE TABLE detours (
@@ -224,13 +225,16 @@ class JobStore {
     return row.id;
   }
 
+  /** Door numbers already in the shop (lower case), so a list of order forms can say which ones are added. */
+  numbers() { return this.need().prepare('SELECT number FROM doors').all().map(r => r.number.toLowerCase()); }
+
   /** Everything about one door, worked out fresh: where it is in the flow, what it is waiting on, and any repair in progress. */
   door(ref) {
     const db = this.need(), id = this.doorId(ref);
     const d = db.prepare('SELECT d.*, p.name AS project FROM doors d LEFT JOIN projects p ON p.id = d.project_id WHERE d.id = ?').get(id);
     const components = db.prepare('SELECT * FROM components WHERE door_id = ? ORDER BY id').all(id);
     const checks = db.prepare('SELECT item, done_at, done_by FROM checks WHERE door_id = ? ORDER BY rowid').all(id);
-    const completions = db.prepare('SELECT step, at, dept, who FROM completions WHERE door_id = ?').all(id)
+    const completions = db.prepare('SELECT step, at, dept, who, skipped FROM completions WHERE door_id = ?').all(id)
       .sort((a, b) => STEP_KEYS.indexOf(a.step) - STEP_KEYS.indexOf(b.step));
     const detours = db.prepare('SELECT * FROM detours WHERE door_id = ? ORDER BY id').all(id);
     const open = detours.filter(x => x.closed_at === null);
@@ -238,8 +242,13 @@ class JobStore {
     const released = d.released_at !== null;
     const waiting = next && next.key === NEEDED_BEFORE ? components.filter(c => c.ready_at === null).map(c => c.kind) : [];
     const status = !released ? 'new' : !next ? 'done' : open.length ? 'repair' : 'active';
+    let projectTotal = 0, projectIndex = 0;
+    if (d.project_id !== null) {
+      projectTotal = db.prepare('SELECT COUNT(*) AS n FROM doors WHERE project_id = ?').get(d.project_id).n;
+      projectIndex = db.prepare('SELECT COUNT(*) AS n FROM doors WHERE project_id = ? AND id <= ?').get(d.project_id, id).n;
+    }
     return {
-      id, number: d.number, project: d.project || '', customer: d.customer, sourcePath: d.source_path, shipDate: d.ship_date,
+      id, number: d.number, project: d.project || '', projectTotal, projectIndex, notReady: components.filter(c => c.ready_at === null).map(c => c.kind), customer: d.customer, sourcePath: d.source_path, shipDate: d.ship_date,
       createdAt: d.created_at, releasedAt: d.released_at, releasedBy: d.released_by, status,
       next: next ? { key: next.key, dept: next.dept, label: next.label, qc: next.qc } : null,
       waitingOn: waiting, checks, components, completions, detours, openDetours: open,
@@ -280,6 +289,10 @@ class JobStore {
       const missing = db.prepare('SELECT item FROM checks WHERE door_id = ? AND done_at IS NULL ORDER BY rowid').all(id).map(r => r.item);
       if (missing.length) throw Object.assign(bad(`Still waiting on: ${missing.join(', ')}`, 409), { missing });
       db.prepare('UPDATE doors SET released_at = ?, released_by = ? WHERE id = ?').run(now(), text(who, 80) || d, id);
+      // a frame that is bought arrives cut: there is nothing for Frame Prep to cut, and it must not count as work done
+      if (db.prepare("SELECT 1 FROM components WHERE door_id = ? AND kind = 'frame' AND source_kind = 'external'").get(id)) {
+        db.prepare("INSERT INTO completions (door_id, step, at, dept, who, skipped) VALUES (?, 'frame-prep.cut', ?, 'Frame Prep', 'frame is bought', 1)").run(id, now());
+      }
       this.event(db, id, 'door.released', d, who, {});
     });
   }
@@ -306,13 +319,17 @@ class JobStore {
     });
   }
 
-  /** Takes back the latest completed step (a mis-tap). Only the latest, and not once a repair is open. */
-  undo(ref, dept, who) {
+  /**
+   * Takes back the latest completed step (a mis-tap). Only the latest, and not once a repair is open. `expect` is the step the person
+   * saw as latest: if the door has moved on since, nothing is undone (it would take back someone else's work).
+   */
+  undo(ref, dept, who, expect) {
     const d = actor(dept);
     return this.tx(db => {
       const id = this.doorId(ref), door = this.door(id);
-      const last = door.completions[door.completions.length - 1];
+      const last = [...door.completions].reverse().find(c => !c.skipped);
       if (!last) throw bad('Nothing to undo', 409);
+      if (expect && last.step !== expect) throw bad('Someone has already moved this door on', 409);
       if (door.openDetours.length) throw bad('This door is out for repair', 409);
       db.prepare('DELETE FROM completions WHERE door_id = ? AND step = ?').run(id, last.step);
       this.event(db, id, 'step.undone', d, who, { step: last.step });
@@ -360,7 +377,25 @@ class JobStore {
       for (const dt of door.openDetours) if (dt.to_dept === dd) repairs.push({ ...dt, door });
     }
     repairs.sort((a, b) => b.rush - a.rush || a.opened_at - b.opened_at);
-    return { dept: dd, work, repairs };
+    const release = dd === 'Office' ? this.board().filter(d => d.status === 'new') : [];
+    return { dept: dd, work, repairs, parts: this.parts(dd), release };
+  }
+
+  /**
+   * Components this department has to make or receive for released doors: an internal provider (Panel Assembly, Rail & Stile, Skins)
+   * sees what it still has to make; the office sees what has been ordered from outside and has not arrived. Frame Prep's own frame is
+   * not listed: cutting it is a step in the flow.
+   */
+  parts(dept) {
+    const dd = actor(dept);
+    if (dd === 'Frame Prep') return [];
+    const db = this.need();
+    const where = dd === 'Office' ? "c.source_kind = 'external'" : "c.source_kind = 'internal' AND c.source = ?";
+    const rows = db.prepare(`SELECT c.kind, c.source, c.source_kind, c.expected_at, d.id AS door_id, d.number, d.customer, d.ship_date
+                             FROM components c JOIN doors d ON d.id = c.door_id
+                             WHERE d.released_at IS NOT NULL AND c.ready_at IS NULL AND ${where}
+                             ORDER BY d.ship_date = '', d.ship_date, d.id`).all(...(dd === 'Office' ? [] : [dd]));
+    return rows.map(r => ({ doorId: r.door_id, number: r.number, customer: r.customer, shipDate: r.ship_date, kind: r.kind, source: r.source, sourceKind: r.source_kind, expectedAt: r.expected_at }));
   }
 
   /** Every unfinished door with where it is, for the office board. New (unreleased) doors are included. */
@@ -376,7 +411,7 @@ class JobStore {
     const ids = db.prepare('SELECT id FROM doors WHERE project_id = ?').all(p.id).map(r => r.id);
     const key = step || STEP_KEYS[STEP_KEYS.length - 1];
     if (!stepOf(key)) throw bad('Unknown step');
-    const doneAt = db.prepare('SELECT COUNT(*) AS n FROM completions WHERE step = ? AND door_id IN (SELECT id FROM doors WHERE project_id = ?)').get(key, p.id).n;
+    const doneAt = db.prepare('SELECT COUNT(*) AS n FROM completions WHERE step = ? AND skipped = 0 AND door_id IN (SELECT id FROM doors WHERE project_id = ?)').get(key, p.id).n;
     return { name: p.name, doors: ids.length, step: key, done: doneAt };
   }
 

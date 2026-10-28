@@ -4,6 +4,7 @@
   const esc = s => String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
   const icon = n => `<svg class="i"><use href="#i-${n}"/></svg>`;
 
+  const views = {};          // extra screens (jobs.js) register a loader here: views.work = async force => { ... }
   const S = { path: '', items: [], sel: null, view: 'home', q: '', who: '', info: null, snapshot: '', results: null };
   const store = {
     get(k) { try { return localStorage.getItem(k); } catch { return null; } },
@@ -130,7 +131,7 @@
     $('.top').style.display = v === 'files' ? '' : 'none';          // search, New folder and Upload only make sense among the files
     $$('[data-view]').forEach(b => b.classList.toggle('active', b.dataset.view === v && !b.closest('.quick')));
     $$('.view').forEach(el => el.hidden = el.id !== 'view-' + v);
-    if (v !== 'files') closeDetail();
+    if (v !== 'files') { closeDetail(); S.drawer = null; }
     if (v !== 'orders') S.order = null;
     refresh(true);
   }
@@ -260,7 +261,7 @@
   const syncSearchUi = () => { $('#q-clear').hidden = !$('#q').value; $('#q').placeholder = innerWidth <= 820 ? 'Search files' : 'Search drawings, files, folders'; };
   $('#q').addEventListener('input', syncSearchUi); window.addEventListener('resize', syncSearchUi); syncSearchUi();
   $('#q-clear').onclick = () => { clearSearch(); syncSearchUi(); loadFiles(true); $('#q').focus(); };
-  $('#scrim').onclick = () => { S.sel = null; closeDetail(); renderFiles(); };
+  $('#scrim').onclick = () => { if (S.drawer) { S.drawer = null; closeDetail(); } else { S.sel = null; closeDetail(); renderFiles(); } };
   // ---------- uploads ----------
   const queue = []; let active = 0, uploadedAny = false;
   function enqueue(entries) {
@@ -356,22 +357,24 @@
   // The first screen: a greeting, four big buttons, and the doors in the shop. Nothing here needs explaining.
   const greeting = () => { const h = new Date().getHours(); return h < 12 ? 'Good morning' : h < 17 ? 'Good afternoon' : 'Good evening'; };
   async function loadHome(force) {
-    let items = [];
+    let items = [], line = null;
     try { items = (await api('orders')).items; } catch (e) { if (!S.homeSnap) throw e; }
-    const snap = JSON.stringify([items, S.who, S.me && S.me.tag]);
+    try { line = await window.Portal.jobs.homeLine(); } catch { /* jobs unavailable: the other tiles still work */ }
+    const snap = JSON.stringify([items, S.who, S.me && S.me.tag, line]);
     if (!force && snap === S.homeSnap) return;
     S.homeSnap = snap; S.orderItems = items;
     const good = items.filter(o => !o.error), tag = S.me && S.me.tag;
     const first = (S.who || '').trim().split(/\s+/)[0];
     const tiles = [
-      ['orders', 'door', 'Door orders', good.length ? good.length + ' door' + (good.length === 1 ? '' : 's') + ' in the shop' : 'Work orders for every department', '#b5373d'],
-      ['files', 'files', 'Files', 'Drawings, programs and folders', '#c9760f'],
-      ['activity', 'activity', "What's new", 'Files people just added', '#1f8f55'],
-      ['computers', 'monitor', 'Computers', 'Who is connected', '#3d63c9'],
+      ['work', 'work', 'My work', line ? line.text : 'What to do next', line && line.color || '#1f8f55'],
+      ['board', 'board', 'Board', 'Every door, start to finish', '#c9760f'],
+      ['orders', 'door', 'Door orders', good.length ? good.length + ' order form' + (good.length === 1 ? '' : 's') : 'Work orders for every department', '#b5373d'],
+      ['files', 'files', 'Files', 'Drawings, programs and folders', '#3d63c9'],
     ].map(([v, ic, t, s, c]) => `<button class="bt" data-go-view="${v}" style="--c:${c}"><span class="bi">${icon(ic)}</span><span><b>${t}</b><span>${esc(s)}</span></span></button>`).join('');
     const recent = good.slice(0, 6).map(o => `<button class="dr" data-door="${esc(o.rel)}"><span class="doorpill">${esc(o.door || '?')}</span><span class="t"><b>${esc(both(o.f && o.f.customer, o.f && o.f.project) || o.name)}</b>${o.f && o.f.ship ? `<span>Ships ${esc(o.f.ship)}</span>` : ''}</span><span class="go">${icon('open')}</span></button>`).join('');
     $('#home').innerHTML = `<div class="hello"><h1>${greeting()}${first ? ', ' + esc(first) : ''}</h1><div class="sub">${new Date().toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric' })}${tag ? ' · ' + esc(tag) : ''}</div></div>
       <div class="big-tiles">${tiles}</div>
+      <div class="home-links"><button data-go-view="activity">${icon('activity')}What's new</button><button data-go-view="computers">${icon('monitor')}Computers</button></div>
       ${recent ? `<div class="section-h"><h2>Doors in the shop</h2><button data-go-view="orders">See all</button></div><div class="doors">${recent}</div>` : ''}`;
     $$('#home [data-go-view]').forEach(b => b.onclick = () => setView(b.dataset.goView));
     $$('#home [data-door]').forEach(b => b.onclick = () => {
@@ -403,13 +406,16 @@
 
   async function loadOrders(force) {
     if (S.order) return;                                   // someone is reading an order: leave it alone
-    const { items } = await api('orders');
+    const { items, inShop = [] } = await api('orders');
     if (S.order) return;                                   // one was opened while this was loading
-    const snap = JSON.stringify(items);
+    S.inShop = new Set(inShop);
+    const snap = JSON.stringify([items, inShop]);
     if (!force && snap === S.ordersSnap) return;
     S.ordersSnap = snap; S.orderItems = items;
     renderOrders();
   }
+  const inShop = o => !!(o.door && S.inShop && S.inShop.has(o.door.toLowerCase()));
+  const shopBadge = o => (o.error || !o.door ? '' : inShop(o) ? '<span class="shopbadge in">In the shop</span>' : '<span class="shopbadge new">Not added</span>');
   function renderOrders() {
     const items = S.orderItems || [], dept = curDept(), cols = COLS[dept];
     $('#orders-crumbs').innerHTML = '<button>Door orders</button>';
@@ -425,10 +431,13 @@
     const rows = items.map((o, i) => {
       if (o.error) return '<div class="orow item" style="' + grid + '" data-i="' + i + '"><div class="door">' + dash(o.door || o.name) + '</div><div class="bad" style="grid-column: 2 / -1">' + esc(o.error) + '</div></div>';
       const sub = dept === 'Office' ? (o.f.ship ? 'Ships ' + o.f.ship : '') : (o.f.customer || '');
-      return '<div class="orow item" style="' + grid + '" data-i="' + i + '" tabindex="0"><div class="door"><span class="doorpill">' + esc(o.door || '?') + '</span><span class="muted sm">' + esc(sub) + '</span></div>'
+      return '<div class="orow item" style="' + grid + '" data-i="' + i + '" tabindex="0"><div class="door"><span class="doorpill">' + esc(o.door || '?') + '</span>' + shopBadge(o) + '<span class="muted sm">' + esc(sub) + '</span></div>'
         + cols.map(c => '<div data-l="' + esc(c[0]) + '">' + (c[2] ? (c[1](o.f) || dash('')) : dash(c[1](o.f))) + '</div>').join('') + '</div>';
     }).join('');
-    $('#orders').innerHTML = deptTabs('dtabs', dept) + '<div class="otable" style="--dc:' + DCOL[dept] + '">' + head + rows + '</div>';
+    const fresh = items.filter(o => !o.error && o.door && !inShop(o)).length;
+    const addbar = fresh ? '<div class="addbar"><div><b>' + fresh + (fresh === 1 ? ' order form is' : ' order forms are') + ' not in the shop yet.</b><span>Add ' + (fresh === 1 ? 'it' : 'them') + ' so the departments see the work.</span></div><button class="btn primary" id="add-all">' + icon('plus') + 'Add to the shop</button></div>' : '';
+    $('#orders').innerHTML = addbar + deptTabs('dtabs', dept) + '<div class="otable" style="--dc:' + DCOL[dept] + '">' + head + rows + '</div>';
+    if (fresh) $('#add-all').onclick = () => window.Portal.jobs.addForms(null);
     $$('#dtabs [data-dept]').forEach(b => b.onclick = () => { S.dept = b.dataset.dept; renderOrders(); });
     $$('#orders .orow.item').forEach(r => {
       const o = items[+r.dataset.i];
@@ -444,12 +453,14 @@
     $('#oc-back').onclick = () => { S.order = null; loadOrders(true).catch(e => toast(e.message, true)); };
     $('#orders-sub').textContent = both(o.f && o.f.customer, o.f && o.f.project);
     const wo = 'path=' + q(o.rel) + '&dept=' + q(dept);
+    const shopBtn = o.error || !o.door ? '' : inShop(o) ? `<button class="btn" id="o-shop">${icon('work')}Open in the shop</button>` : `<button class="btn primary" id="o-shop">${icon('plus')}Add to the shop</button>`;
     $('#orders-actions').innerHTML = S.orderMode === 'workorder'
-      ? `<button class="btn" id="o-sheet">${icon('files')}Original sheet</button><button class="btn" id="o-print">Print</button><a class="btn primary" href="/api/orders/pdf?${wo}" download>${icon('download')}Save as PDF</a>`
+      ? `${shopBtn}<button class="btn" id="o-sheet">${icon('files')}Original sheet</button><button class="btn" id="o-print">Print</button><a class="btn primary" href="/api/orders/pdf?${wo}" download>${icon('download')}Save as PDF</a>`
       : `<button class="btn primary" id="o-wo">${icon('back')}Back to work order</button><a class="btn" href="${fileUrl('Door Orders/' + o.rel)}" download>${icon('download')}Download Excel</a>`;
     if (S.orderMode === 'workorder') {
       $('#orders').innerHTML = deptTabs('wtabs', dept) + '<iframe class="wo-frame" id="wo-frame" title="Work order" src="/api/orders/workorder?' + wo + '"></iframe>';
       $$('#wtabs [data-dept]').forEach(b => b.onclick = () => { S.dept = b.dataset.dept; openOrder(o); });
+      if ($('#o-shop')) $('#o-shop').onclick = () => (inShop(o) ? window.Portal.jobs.openDoor(o.door) : window.Portal.jobs.addForms([o.rel]));
       $('#o-sheet').onclick = () => openOrder(o, 'sheet');
       $('#o-print').onclick = () => { try { $('#wo-frame').contentWindow.print(); } catch { toast("Printing isn't available here. Use Download PDF.", true); } };
       return;
@@ -599,6 +610,7 @@
       else if (S.view === 'files') await loadFiles(force);
       else if (S.view === 'activity') await loadActivity();
       else if (S.view === 'orders') await loadOrders(force);
+      else if (views[S.view]) await views[S.view](force);
       else await loadComputers();
       setConn(true);
     } catch { setConn(false); }
@@ -611,13 +623,22 @@
   setInterval(() => { if (!document.hidden && !$('#dlg').open && !queue.length && !active && !S.results) refresh(false); }, 3000);
 
   // ---------- start ----------
-  (async () => {
+  /** Opens one door's order form (by its path inside Door Orders), from anywhere. */
+  async function showOrder(rel) {
+    S.order = null;
+    setView('orders');
+    await loadOrders(true);
+    const o = (S.orderItems || []).find(x => x.rel === rel);
+    if (o) openOrder(o);
+  }
+  window.Portal = { $, $$, esc, icon, api, toast, ask, S, setView, closeDetail, ago, views, refresh, q, go, showOrder };
+  window.addEventListener('DOMContentLoaded', async () => {
     try { S.info = await api('info'); } catch { setConn(false); }
     await initWho();
     let me = null;
     try { me = await api('me'); S.me = me; S.info = await api('info'); } catch { setConn(false); }          // signs in first if this browser has to
     api('devices').then(d => $('#pc-count').textContent = d.devices.length).catch(() => { });
     loadQuick();
-    if (me && DEPTS.includes(me.tag) && me.tag !== 'Office') setView('orders'); else setView('home');          // production computers open on their door orders
-  })();
+    setView(window.Portal.jobs ? window.Portal.jobs.startView() : 'home');          // a computer whose department is known opens on its work
+  });
 })();
