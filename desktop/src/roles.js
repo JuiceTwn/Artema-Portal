@@ -23,6 +23,7 @@ const PERMISSIONS = {
   'pin.rotate': 'admin',
   'devices.tag': 'admin',
   'devices.remove': 'admin',
+  'board.edit': 'admin',            // the board's columns, labels and tabs, and whether the guided steps are on
   'devices.role': 'admin',          // admins hand out `general` and `admin`; only dev hands out `dev`: see canAssign
   'server.update': 'dev',           // installs new software on the main computer from GitHub
   'files.reveal': 'dev',           // opens a folder on the main computer's own screen

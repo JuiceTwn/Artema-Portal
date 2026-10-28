@@ -29,31 +29,50 @@ function withForms(orders, doors) {
   return doors.map(d => ({ ...d, form: byPath.get(d.sourcePath) || null }));
 }
 
+/**
+ * Adds a door. With the guided steps off (the normal case) a door is simply on the board: no parts checklist, nothing to release.
+ * With them on it starts as "not started" with the parts to confirm, as before.
+ */
+function addDoor(jobs, input, guided, dept, who) {
+  if (guided) return jobs.createDoor(input, dept || 'Office');
+  const id = jobs.createDoor({ ...input, components: [], checks: [] }, dept || 'Office');
+  jobs.release(id, dept || 'Office', who || 'automatic');
+  return id;
+}
+
 const str = v => (typeof v === 'string' ? v : v == null ? '' : String(v));
 
 /** Handles a GET; returns the JSON to send. */
 function get(jobs, orders, ep, q) {
   if (!jobs || !jobs.ok) throw new HttpError(503, 'Jobs are unavailable right now. Ask whoever looks after the Portal.');
   return wrap(() => {
-    if (ep === 'jobs/meta') return { stages: STAGES, steps: STEPS, actors: ACTORS, reasons: REPAIR_REASONS, defaults: DEFAULT_CHOICES };
-    if (ep === 'jobs/board') return { doors: withForms(orders, jobs.board()) };
+    if (ep === 'jobs/meta') return { stages: STAGES, steps: STEPS, actors: ACTORS, reasons: REPAIR_REASONS, defaults: DEFAULT_CHOICES, ...jobs.settings() };
+    if (ep === 'jobs/board') return { ...jobs.config(), doors: withForms(orders, jobs.board(q.archived === '1' ? 'archived' : 'active')) };
     if (ep === 'jobs/queue') { const r = jobs.queue(str(q.dept)); return { ...r, work: withForms(orders, r.work) }; }
-    if (ep === 'jobs/door') { const door = jobs.door(str(q.id)); return { door, events: jobs.events(40, door.id) }; }
+    if (ep === 'jobs/door') { const door = jobs.door(str(q.id)); return { door, events: jobs.events(40, door.id), comments: jobs.comments(door.id), ...jobs.config() }; }
     throw new HttpError(404, 'Not found');
   });
 }
 
 /** Handles a POST; returns the JSON to send. `orders` reads the order forms. */
-function post(jobs, orders, ep, b) {
+function post(jobs, orders, ep, b, need = () => { }) {
   if (!jobs || !jobs.ok) throw new HttpError(503, 'Jobs are unavailable right now. Ask whoever looks after the Portal.');
   const dept = str(b.dept), who = str(b.who);
   const withDoor = id => ({ ok: true, door: jobs.door(id) });
+  const guided = jobs.settings().guided;
   return wrap(() => {
     if (ep === 'jobs/add') {
       if (!orders) throw new HttpError(404, 'Not found');
       const input = doorFromOrder(orders.find(str(b.rel)), b.choices || {});
       if (jobs.numbers().includes(input.number.toLowerCase())) throw new HttpError(409, `Door ${input.number} is already in the shop`);
-      return withDoor(jobs.createDoor(input, dept || 'Office'));
+      return withDoor(addDoor(jobs, input, guided, dept, who));
+    }
+    if (ep === 'jobs/new') {
+      const number = str(b.number).trim();
+      if (!number) throw new HttpError(400, 'A door needs a number');
+      if (jobs.numbers().includes(number.toLowerCase())) throw new HttpError(409, `Door ${number} is already in the shop`);
+      const input = doorFromOrder({ door: number, path: '', f: { customer: str(b.customer), project: str(b.project), ship: str(b.shipDate) } }, b.choices || {});
+      return withDoor(addDoor(jobs, input, guided, dept, who));
     }
     if (ep === 'jobs/add-all') {
       if (!orders) throw new HttpError(404, 'Not found');
@@ -61,10 +80,24 @@ function post(jobs, orders, ep, b) {
       for (const o of orders.list()) {
         if (o.error || !o.door) { skipped.push({ name: o.name, why: o.error || 'No door number' }); continue; }
         if (have.has(o.door.toLowerCase())) continue;
-        try { jobs.createDoor(doorFromOrder(o, b.choices || {}), dept || 'Office'); have.add(o.door.toLowerCase()); added.push(o.door); }
+        try { addDoor(jobs, doorFromOrder(o, b.choices || {}), guided, dept, who); have.add(o.door.toLowerCase()); added.push(o.door); }
         catch (e) { skipped.push({ name: o.name, why: e.message }); }
       }
       return { ok: true, added, skipped };
+    }
+    // ---- what the floor does all day: set a cell, comment, archive
+    if (ep === 'jobs/cell') { jobs.setCell(str(b.id), b.field, b.value, dept, who); return withDoor(str(b.id)); }
+    if (ep === 'jobs/comment') { jobs.addComment(str(b.id), str(b.text), dept, who); return withDoor(str(b.id)); }
+    if (ep === 'jobs/archive') { jobs.setArchived(str(b.id), b.on !== false, dept, who); return { ok: true }; }
+    // ---- the board's setup is for admins
+    if (ep.startsWith('jobs/field/') || ep === 'jobs/labels/save' || ep === 'jobs/views/save' || ep === 'jobs/settings') {
+      need('board.edit');
+      if (ep === 'jobs/field/add') return { ok: true, id: jobs.addField(str(b.name), str(b.kind), dept, who) };
+      if (ep === 'jobs/field/rename') { jobs.renameField(b.id, str(b.name), dept, who); return { ok: true }; }
+      if (ep === 'jobs/field/delete') { jobs.deleteField(b.id, dept, who); return { ok: true }; }
+      if (ep === 'jobs/labels/save') { jobs.saveLabels(b.field, b.labels, dept, who); return { ok: true }; }
+      if (ep === 'jobs/views/save') { jobs.saveViews(b.views, dept, who); return { ok: true }; }
+      if (ep === 'jobs/settings') { if (typeof b.guided === 'boolean') jobs.setGuided(b.guided, dept, who); return { ok: true, ...jobs.settings() }; }
     }
     if (ep === 'jobs/note') { jobs.setNote(str(b.id), str(b.note), dept, who); return withDoor(str(b.id)); }
     if (ep === 'jobs/check') { jobs.setCheck(str(b.id), str(b.item), b.done !== false, dept, who); return withDoor(str(b.id)); }

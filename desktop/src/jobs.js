@@ -25,7 +25,7 @@ const { STEPS, STEP_KEYS, stepOf, COMPONENT_KINDS, NEEDED_BEFORE, DEFAULT_CHECKS
 const ACTORS = [...FLOW_DEPARTMENTS, 'Skins', 'Panel Assembly', 'Rail & Stile', 'Office'];
 const SOURCE_KINDS = ['internal', 'external'];
 
-const SCHEMA_VERSION = 1;
+const SCHEMA_VERSION = 2;
 const MIGRATIONS = {
   1: `
     CREATE TABLE projects (
@@ -100,6 +100,51 @@ const MIGRATIONS = {
     );
     CREATE INDEX events_door ON events(door_id, id);
   `,
+  // editable columns, tabs, per-door values and comments (columns.js)
+  2: `
+    CREATE TABLE meta (key TEXT PRIMARY KEY, value TEXT NOT NULL) WITHOUT ROWID;
+    CREATE TABLE fields (
+      id       INTEGER PRIMARY KEY AUTOINCREMENT,
+      name     TEXT    NOT NULL,
+      kind     TEXT    NOT NULL CHECK (kind IN ('status', 'date', 'text')),
+      position INTEGER NOT NULL
+    );
+    CREATE TABLE labels (
+      id       INTEGER PRIMARY KEY AUTOINCREMENT,
+      field_id INTEGER NOT NULL REFERENCES fields(id) ON DELETE CASCADE,
+      name     TEXT    NOT NULL,
+      color    TEXT    NOT NULL,
+      position INTEGER NOT NULL,
+      done     INTEGER NOT NULL DEFAULT 0,
+      attn     INTEGER NOT NULL DEFAULT 0
+    );
+    CREATE INDEX labels_field ON labels(field_id, position);
+    CREATE TABLE cells (
+      door_id  INTEGER NOT NULL REFERENCES doors(id) ON DELETE CASCADE,
+      field_id INTEGER NOT NULL REFERENCES fields(id) ON DELETE CASCADE,
+      label_id INTEGER REFERENCES labels(id) ON DELETE SET NULL,
+      value    TEXT    NOT NULL DEFAULT '',
+      at       INTEGER NOT NULL,
+      dept     TEXT    NOT NULL DEFAULT '',
+      PRIMARY KEY (door_id, field_id)
+    ) WITHOUT ROWID;
+    CREATE TABLE views (
+      id       INTEGER PRIMARY KEY AUTOINCREMENT,
+      name     TEXT    NOT NULL,
+      position INTEGER NOT NULL,
+      cols     TEXT    NOT NULL DEFAULT '[]'
+    );
+    CREATE TABLE comments (
+      id      INTEGER PRIMARY KEY AUTOINCREMENT,
+      door_id INTEGER NOT NULL REFERENCES doors(id) ON DELETE CASCADE,
+      at      INTEGER NOT NULL,
+      dept    TEXT    NOT NULL,
+      who     TEXT    NOT NULL DEFAULT '',
+      body    TEXT    NOT NULL
+    );
+    CREATE INDEX comments_door ON comments(door_id, id);
+    ALTER TABLE doors ADD COLUMN archived_at INTEGER;
+  `,
 };
 
 const now = () => Math.floor(Date.now() / 1000);
@@ -122,6 +167,7 @@ class JobStore {
     this.unavailable = '';
     this.restoredFrom = '';
     this.open();
+    if (this.db) this.seed();
   }
 
   // ---- opening, migration, recovery
@@ -250,7 +296,7 @@ class JobStore {
     }
     return {
       id, number: d.number, project: d.project || '', projectTotal, projectIndex, notReady: components.filter(c => c.ready_at === null).map(c => c.kind), customer: d.customer, sourcePath: d.source_path, shipDate: d.ship_date,
-      createdAt: d.created_at, notes: d.notes, releasedAt: d.released_at, releasedBy: d.released_by, status,
+      createdAt: d.created_at, notes: d.notes, archived: d.archived_at !== null, cells: this.cellsOf(id), commentCount: this.commentCount(id), releasedAt: d.released_at, releasedBy: d.released_by, status,
       next: next ? { key: next.key, dept: next.dept, label: next.label, qc: next.qc } : null,
       waitingOn: waiting, checks, components, completions, detours, openDetours: open,
     };
@@ -411,9 +457,13 @@ class JobStore {
     return rows.map(r => ({ doorId: r.door_id, number: r.number, customer: r.customer, shipDate: r.ship_date, kind: r.kind, source: r.source, sourceKind: r.source_kind, expectedAt: r.expected_at }));
   }
 
-  /** Every unfinished door with where it is, for the office board. New (unreleased) doors are included. */
-  board() {
-    return this.need().prepare('SELECT id FROM doors ORDER BY ship_date = \'\', ship_date, id').all().map(r => this.door(r.id)).filter(d => d.status !== 'done');
+  /**
+   * Every door on the board, by ship date. Finished (guided flow) and archived doors are not on it; `mode` 'archived' lists the archived ones.
+   */
+  board(mode = 'active') {
+    const rows = this.need().prepare('SELECT id, archived_at FROM doors ORDER BY ship_date = \'\', ship_date, id').all();
+    const archived = mode === 'archived';
+    return rows.filter(r => archived === (r.archived_at !== null)).map(r => this.door(r.id)).filter(d => archived || d.status !== 'done');
   }
 
   /** "5 of 13": how many of a project's doors have finished a step (or the whole flow when none is given). */
@@ -481,5 +531,7 @@ class JobStore {
 
   close() { try { if (this.db) this.db.close(); } catch { /* already closed */ } this.db = null; }
 }
+
+require('./columns').install(JobStore, { actor, text, bad, now });
 
 module.exports = { JobStore, ACTORS, STEPS };

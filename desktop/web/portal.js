@@ -366,7 +366,7 @@
     const good = items.filter(o => !o.error), tag = S.me && S.me.tag;
     const first = (S.who || '').trim().split(/\s+/)[0];
     const tiles = [
-      ['work', 'work', 'My work', line ? line.text : 'What to do next', line && line.color || '#1f8f55'],
+      ...(line ? [['work', 'work', 'My work', line.text, line.color || '#1f8f55']] : []),
       ['board', 'board', 'Board', 'Every door, start to finish', '#c9760f'],
       ['orders', 'door', 'Door orders', good.length ? good.length + ' order form' + (good.length === 1 ? '' : 's') : 'Work orders for every department', '#b5373d'],
       ['files', 'files', 'Files', 'Drawings, programs and folders', '#3d63c9'],

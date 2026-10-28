@@ -158,7 +158,7 @@ function createPortalServer(store, port, webDir, hooks = {}) {
         return sendJson(res, { ok: true });
       } else if (req.method === 'POST') {
         const b = await readBody(req);
-        if (ep.startsWith('jobs/')) return sendJson(res, jobsApi.post(hooks.jobs, hooks.orders, ep, b));
+        if (ep.startsWith('jobs/')) return sendJson(res, jobsApi.post(hooks.jobs, hooks.orders, ep, b, need));
         if (ep === 'mkdir') { store.mkdir(b.path, who); return sendJson(res, { ok: true }); }
         if (ep === 'delete') { store.delete(b.path, who); return sendJson(res, { ok: true }); }
         if (ep === 'move') { store.move(b.from, b.to, who); return sendJson(res, { ok: true }); }

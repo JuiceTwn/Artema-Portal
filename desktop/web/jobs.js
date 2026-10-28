@@ -18,6 +18,7 @@
   // ---------- what the server says the flow is ----------
   let metaP = null;
   const meta = () => (metaP || (metaP = api('jobs/meta').catch(e => { metaP = null; throw e; })));
+  const resetMeta = () => { metaP = null; return meta().then(m => { applyGuided(m.guided); return m; }); };
   const stepInfo = (m, key) => m.steps.find(s => s.key === key);
   const stepLabel = (m, key) => { const s = stepInfo(m, key); return s ? (s.qc ? 'QC' : s.label) : key; };
   /** The words on the button that completes a step: "CNC done", "QC passed", "Shipped". */
@@ -26,7 +27,12 @@
   // ---------- which department am I in? ----------
   // Remembered by this browser, and changed in one tap. A computer that has a department set by an admin starts in it.
   let actors = ['Frame Prep', 'Paint', 'Assembly', 'Shipping', 'Office', 'Panel Assembly', 'Skins', 'Rail & Stile'];
-  meta().then(m => { actors = m.actors; paintDeptLine(); }).catch(() => { });
+  /** Shows or hides the parts of the app that only the guided steps use (My work). */
+  function applyGuided(on) {
+    S.guided = !!on;
+    $$('[data-view="work"]').forEach(b => { b.hidden = !on; });
+  }
+  meta().then(m => { actors = m.actors; applyGuided(m.guided); paintDeptLine(); }).catch(() => { });
   const myDept = () => {
     const s = store.get('artema.jobdept');
     if (s && actors.includes(s)) return s;
@@ -39,7 +45,20 @@
     if (!el) return;
     el.innerHTML = d ? `<span class="dl-dot" style="background:${dcol(d)}"></span><span>You're in <b>${esc(d)}</b></span><button class="link" id="dept-change">Change</button>`
       : `<button class="link" id="dept-change">Choose your department</button>`;
-    $('#dept-change').onclick = () => { S.pickDept = true; S.workSnap = ''; setView('work'); };
+    $('#dept-change').onclick = () => chooseDept();
+  }
+  /** Pick (or change) the department this browser acts as. */
+  async function chooseDept() {
+    const cur = myDept();
+    const d = await modal({
+      title: 'Which department are you in?', ok: 'Continue',
+      html: `<p>The Portal records changes by department. Tap yours. You can change it any time.</p>${choiceHtml('dept', PICK_ORDER.filter(x => actors.includes(x)).map(x => [x, x, DWHAT[x] || '', dcol(x)]), cur)}`,
+      mount: wireChoices,
+      collect: el => chosen(el, 'dept') || (toast('Tap your department', true), undefined),
+    });
+    if (!d) return false;
+    setDept(d); afterChange();
+    return true;
   }
   /** A change is always made as a department. If this browser hasn't chosen one yet, ask first. */
   async function ensureDept() {
@@ -76,6 +95,11 @@
   const projectLine = d => (d.project && d.projectTotal > 1 ? `${d.project} · ${d.projectIndex} of ${d.projectTotal}` : d.project && d.projectTotal === 1 ? '' : '');
 
   // ---------- small pieces ----------
+  /** Black or white text, whichever reads better on a background colour. */
+  function inkOn(hex) {
+    const n = parseInt(String(hex).replace('#', ''), 16), r = (n >> 16) & 255, g = (n >> 8) & 255, b = n & 255;
+    return (0.299 * r + 0.587 * g + 0.114 * b) > 165 ? '#1a1106' : '#fff';
+  }
   /** The steps of one department as dots: done, current, still to come. */
   function dots(m, door, dept) {
     const done = new Set(door.completions.map(c => c.step));
@@ -96,18 +120,22 @@
   }
 
   /** A dialog with a body of our own. `collect(el)` returns the answer, or undefined to keep the dialog open. Resolves to the answer or null. */
-  function modal({ title, html, ok = 'OK', collect, mount }) {
+  function modal({ title, html, ok = 'OK', collect, mount, wide, noCancel }) {
     return new Promise(res => {
-      const d = $('#pick'), body = $('#pk-body');
-      $('#pk-title').textContent = title;
+      // each dialog builds its own element, so one can open on top of another (Customize, then Edit labels)
+      const d = document.createElement('dialog');
+      d.className = 'pick' + (wide ? ' wide' : '');
+      d.innerHTML = `<form method="dialog"><h2></h2><div class="pk-body"></div><div class="btns">${noCancel ? '' : '<button type="button" class="btn pk-cancel">Cancel</button>'}<button class="btn primary pk-ok"></button></div></form>`;
+      const form = $('form', d), body = $('.pk-body', d);
+      $('h2', d).textContent = title;
+      $('.pk-ok', d).textContent = ok;
       body.innerHTML = html;
-      $('#pk-ok').textContent = ok;
+      document.body.append(d);
       if (mount) mount(body);
-      const done = v => { d.close(); off(); res(v); };
-      const onSubmit = e => { e.preventDefault(); const v = collect ? collect(body) : true; if (v !== undefined) done(v); };
-      const onCancel = e => { if (e) e.preventDefault(); done(null); };
-      const off = () => { $('#pk-form').removeEventListener('submit', onSubmit); $('#pk-cancel').removeEventListener('click', onCancel); d.removeEventListener('cancel', onCancel); };
-      $('#pk-form').addEventListener('submit', onSubmit); $('#pk-cancel').addEventListener('click', onCancel); d.addEventListener('cancel', onCancel);
+      const done = v => { d.close(); d.remove(); res(v); };
+      form.addEventListener('submit', e => { e.preventDefault(); const v = collect ? collect(body) : true; if (v !== undefined) done(v); });
+      const cancel = $('.pk-cancel', d); if (cancel) cancel.addEventListener('click', () => done(null));
+      d.addEventListener('cancel', e => { e.preventDefault(); done(null); });
       d.showModal();
     });
   }
@@ -272,69 +300,85 @@
   }
 
   // ---------- one door ----------
-  async function openDoor(ref) {
+  async function openDoor(ref, opts) {
     const { door } = await api('jobs/door?id=' + q(ref));
-    S.drawer = String(door.id);
+    S.drawer = String(door.id); S.drawerSnap = ''; S.drawerScroll = opts && opts.comments ? 'comments' : '';
     drawDoor(door.id, true);
   }
   async function drawDoor(id, force) {
     if (String(S.drawer) !== String(id)) return;
-    if (!force && document.activeElement && document.activeElement.id === 'dr-note') return;          // don't redraw under someone who is typing
+    const ae = document.activeElement;
+    if (!force && ae && (ae.id === 'dr-note' || ae.id === 'dr-comment')) return;          // don't redraw under someone who is typing
     let data;
     try { data = await api('jobs/door?id=' + q(id)); } catch (e) { if (force) toast(e.message, true); return; }
     const snap = JSON.stringify(data);
     if (!force && snap === S.drawerSnap) return;
     S.drawerSnap = snap;
-    const m = await meta(), d = data.door, mine = myDept();
+    const m = await meta(), d = data.door, mine = myDept(), guided = !!data.guided;
+    applyGuided(guided);
     const done = new Map(d.completions.map(c => [c.step, c]));
     const dueI = due(d.shipDate);
 
-    let status;
-    if (d.status === 'new') status = `<div class="dr-status new">Not started yet. The office starts it once the parts are in.</div>`;
-    else if (d.status === 'done') status = `<div class="dr-status done">${icon('check')}Finished</div>`;
-    else if (d.status === 'repair') status = `<div class="dr-status repair">${icon('alert')}Out for repair at ${esc(d.openDetours.map(x => x.to_dept).join(' and '))}. Then it carries on at ${esc(stepLabel(m, d.next.key))}.</div>`;
-    else status = `<div class="dr-status now" style="--dc:${dcol(d.next.dept)}"><div><small>${esc(d.next.dept)} · next step</small><b>${esc(d.next.qc ? 'QC' : d.next.label)}</b></div></div>`;
-
-    const steps = m.stages.map(st => {
-      const rows = m.steps.filter(s => s.stage === st.id).map(s => {
-        const c = done.get(s.key), now = d.next && d.next.key === s.key && d.status !== 'new';
-        const state = c ? (c.skipped ? 'skip' : 'done') : now ? 'now' : 'todo';
-        const right = c ? (c.skipped ? 'Not needed' : `${esc(ago(c.at))}${c.who ? ' · ' + esc(c.who) : ''}`) : now ? 'Next' : '';
-        return `<div class="st ${state}"><span class="st-i">${c && !c.skipped ? icon('check') : ''}</span><span class="st-n">${esc(s.qc ? 'QC' : s.label)}</span><span class="st-r">${right}</span></div>`;
+    // the guided steps: only when an admin has switched them on
+    let flow = '', flowActions = '';
+    if (guided) {
+      let status;
+      if (d.status === 'new') status = `<div class="dr-status new">Not started yet. The office starts it once the parts are in.</div>`;
+      else if (d.status === 'done') status = `<div class="dr-status done">${icon('check')}Finished</div>`;
+      else if (d.status === 'repair') status = `<div class="dr-status repair">${icon('alert')}Out for repair at ${esc(d.openDetours.map(x => x.to_dept).join(' and '))}. Then it carries on at ${esc(stepLabel(m, d.next.key))}.</div>`;
+      else status = `<div class="dr-status now" style="--dc:${dcol(d.next.dept)}"><div><small>${esc(d.next.dept)} · next step</small><b>${esc(d.next.qc ? 'QC' : d.next.label)}</b></div></div>`;
+      const steps = m.stages.map(st => {
+        const rows = m.steps.filter(s => s.stage === st.id).map(s => {
+          const c = done.get(s.key), now = d.next && d.next.key === s.key && d.status !== 'new';
+          const state = c ? (c.skipped ? 'skip' : 'done') : now ? 'now' : 'todo';
+          const right = c ? (c.skipped ? 'Not needed' : `${esc(ago(c.at))}${c.who ? ' · ' + esc(c.who) : ''}`) : now ? 'Next' : '';
+          return `<div class="st ${state}"><span class="st-i">${c && !c.skipped ? icon('check') : ''}</span><span class="st-n">${esc(s.qc ? 'QC' : s.label)}</span><span class="st-r">${right}</span></div>`;
+        }).join('');
+        return `<div class="st-group"><div class="st-h" style="--dc:${dcol(st.dept)}">${esc(st.dept)}</div>${rows}</div>`;
       }).join('');
-      return `<div class="st-group"><div class="st-h" style="--dc:${dcol(st.dept)}">${esc(st.dept)}</div>${rows}</div>`;
+      const comps = d.components.length ? `<div class="dr-sec"><h3>Parts</h3>${d.components.map(c => {
+        const ready = c.ready_at !== null;
+        return `<div class="part ${ready ? 'ok' : ''}"><div><b>${esc(KIND[c.kind] || c.kind)}</b><span>${c.source_kind === 'external' ? 'From ' + esc(c.source || 'a supplier') : 'Made by ' + esc(c.source)}${c.expected_at ? ' · due ' + esc(c.expected_at) : ''}</span></div>
+          ${ready ? `<span class="ok">${icon('check')}Ready</span><button class="link" data-unready="${c.kind}">Not ready</button>` : `<span class="wait">Not here yet</span><button class="btn" data-ready="${c.kind}">Mark ready</button>`}</div>`;
+      }).join('')}</div>` : '';
+      const allIn = d.checks.every(x => x.done_at);
+      const checks = d.status === 'new' ? `<div class="dr-sec"><h3>Before it starts</h3><div class="dr-note">Tick each part when it is in the shop.</div>${d.checks.map(x => `
+        <button class="chk${x.done_at ? ' on' : ''}" data-check="${esc(x.item)}" data-on="${x.done_at ? 1 : 0}"><span class="box">${x.done_at ? icon('check') : ''}</span>${esc(x.item)}</button>`).join('')}
+        <button class="btn primary big full" id="dr-release"${allIn ? '' : ' disabled'}>${icon('check')}${allIn ? 'Start this door' : 'Tick every part to start'}</button></div>` : '';
+      const repairs = d.openDetours.length ? `<div class="dr-sec"><h3>Repairs open</h3>${d.openDetours.map(r => `
+        <div class="rep-row"><div><b>${esc(r.to_dept)}</b><span>${esc(r.reason || 'Needs repair')} · sent by ${esc(r.from_dept)} ${esc(ago(r.opened_at))}</span></div><button class="btn primary" data-repair-done="${r.id}">Repair done</button></div>`).join('')}</div>` : '';
+      const canStep = d.status === 'active' && !d.waitingOn.length;
+      const primary = canStep ? `<button class="btn primary big full" data-step="${d.next.key}" style="--dc:${dcol(d.next.dept)}">${icon('check')}${esc(doneWord(stepInfo(m, d.next.key)))}${d.next.dept !== mine && mine !== 'Office' ? ` <small>(${esc(d.next.dept)}'s step)</small>` : ''}</button>`
+        : d.status === 'active' && d.waitingOn.length ? `<div class="wait big">${icon('alert')}Waiting for the ${d.waitingOn.map(k => (KIND[k] || k).toLowerCase()).join(' and ')} to be ready</div>` : '';
+      const canUndo = d.status !== 'new' && d.completions.some(c => !c.skipped) && !d.openDetours.length;
+      flowActions = `${primary}${d.status === 'active' ? `<button class="btn full" id="dr-repair">${icon('wrench')}Send back for repair</button>` : ''}${canUndo ? `<button class="btn full" id="dr-undo">${icon('undo')}Undo last step</button>` : ''}`;
+      flow = `${status}${repairs}${checks}${comps}<div class="dr-sec"><h3>Where it is</h3>${steps}</div>`;
+    }
+
+    // every column on the board, editable here too (and the only place to do it on a phone)
+    const hexOf = k => (data.palette || {})[k] || '#7e8499';
+    const fieldRows = (data.fields || []).map(f => {
+      const c = d.cells[f.id];
+      let val;
+      if (f.kind === 'status') { const l = c && f.labels.find(x => x.id === c.label); val = l ? `<span class="chip" style="background:${hexOf(l.color)};color:${inkOn(hexOf(l.color))}">${esc(l.name)}</span>` : '<span class="chip none">Not set</span>'; }
+      else if (f.kind === 'date') val = c && c.value ? `<span class="chip none">${esc(dueText(c.value))}</span>` : '<span class="chip none">Not set</span>';
+      else val = c && c.value ? `<span class="tx">${esc(c.value)}</span>` : '<span class="chip none">Not set</span>';
+      return `<button class="fv-row" data-edit-field="${f.id}"><span>${esc(f.name)}</span>${val}</button>`;
     }).join('');
+    const fieldsSec = fieldRows ? `<div class="dr-sec"><h3>Status</h3>${fieldRows}</div>` : '';
 
-    const notes = `<div class="dr-sec"><h3>Notes</h3><textarea id="dr-note" class="field" rows="3" maxlength="500" placeholder="Anything the next person should know">${esc(d.notes || '')}</textarea></div>`;
-    const comps = d.components.length ? `<div class="dr-sec"><h3>Parts</h3>${d.components.map(c => {
-      const ready = c.ready_at !== null;
-      return `<div class="part ${ready ? 'ok' : ''}"><div><b>${esc(KIND[c.kind] || c.kind)}</b><span>${c.source_kind === 'external' ? 'From ' + esc(c.source || 'a supplier') : 'Made by ' + esc(c.source)}${c.expected_at ? ' · due ' + esc(c.expected_at) : ''}</span></div>
-        ${ready ? `<span class="ok">${icon('check')}Ready</span><button class="link" data-unready="${c.kind}">Not ready</button>` : `<span class="wait">Not here yet</span><button class="btn" data-ready="${c.kind}">Mark ready</button>`}</div>`;
-    }).join('')}</div>` : '';
-
-    const allIn = d.checks.every(x => x.done_at);
-    const checks = d.status === 'new' ? `<div class="dr-sec"><h3>Before it starts</h3><div class="dr-note">Tick each part when it is in the shop.</div>${d.checks.map(x => `
-      <button class="chk${x.done_at ? ' on' : ''}" data-check="${esc(x.item)}" data-on="${x.done_at ? 1 : 0}"><span class="box">${x.done_at ? icon('check') : ''}</span>${esc(x.item)}</button>`).join('')}
-      <button class="btn primary big full" id="dr-release"${allIn ? '' : ' disabled'}>${icon('check')}${allIn ? 'Start this door' : 'Tick every part to start'}</button></div>` : '';
-
-    const repairs = d.openDetours.length ? `<div class="dr-sec"><h3>Repairs open</h3>${d.openDetours.map(r => `
-      <div class="rep-row"><div><b>${esc(r.to_dept)}</b><span>${esc(r.reason || 'Needs repair')} · sent by ${esc(r.from_dept)} ${esc(ago(r.opened_at))}</span></div><button class="btn primary" data-repair-done="${r.id}">Repair done</button></div>`).join('')}</div>` : '';
-
-    const canStep = d.status === 'active' && !d.waitingOn.length;
-    const primary = canStep ? `<button class="btn primary big full" data-step="${d.next.key}" style="--dc:${dcol(d.next.dept)}">${icon('check')}${esc(doneWord(stepInfo(m, d.next.key)))}${d.next.dept !== mine && mine !== 'Office' ? ` <small>(${esc(d.next.dept)}'s step)</small>` : ''}</button>`
-      : d.status === 'active' && d.waitingOn.length ? `<div class="wait big">${icon('alert')}Waiting for the ${d.waitingOn.map(k => (KIND[k] || k).toLowerCase()).join(' and ')} to be ready</div>` : '';
-    const canUndo = d.status !== 'new' && d.completions.some(c => !c.skipped) && !d.openDetours.length;
-    const actions = `<div class="actions">${primary}
-      ${d.status === 'active' ? `<button class="btn full" id="dr-repair">${icon('wrench')}Send back for repair</button>` : ''}
-      <div class="pair">${d.sourcePath ? `<button class="btn" id="dr-wo">${icon('door')}Work order</button>` : ''}${canUndo ? `<button class="btn" id="dr-undo">${icon('undo')}Undo last step</button>` : ''}</div></div>`;
-
+    const notes = `<div class="dr-sec"><h3>Notes</h3><textarea id="dr-note" class="field" rows="2" maxlength="500" placeholder="Anything the next person should know">${esc(d.notes || '')}</textarea></div>`;
+    const comments = `<div class="dr-sec" id="dr-comments"><h3>Updates${data.comments.length ? ` (${data.comments.length})` : ''}</h3>
+      ${data.comments.map(c => `<div class="cm"><div class="cm-h"><b>${esc(c.dept)}</b>${c.who ? ' · ' + esc(c.who) : ''}<i>${esc(ago(c.at))}</i></div><div class="cm-b">${esc(c.body)}</div></div>`).join('')}
+      <textarea id="dr-comment" class="field" rows="2" maxlength="1000" placeholder="Write an update for everyone to see"></textarea>
+      <button class="btn primary full" id="dr-post">Post update</button></div>`;
+    const actions = `<div class="actions">${flowActions}<div class="pair">${d.sourcePath ? `<button class="btn" id="dr-wo">${icon('door')}Order form</button>` : ''}<button class="btn" id="dr-arch">${d.archived ? 'Bring back to the board' : 'Archive this door'}</button></div></div>`;
     const history = data.events.length ? `<details class="dr-hist"><summary>History</summary>${data.events.map(e => `<div class="hv"><span>${esc(evText(m, e))}</span><i>${esc(e.dept)} · ${esc(ago(e.at))}</i></div>`).join('')}</details>` : '';
 
     $('#detail-in').innerHTML = `<button class="close" id="d-close" aria-label="Close">${icon('x')}</button>
-      <div class="dr-head"><span class="doorpill big">${esc(d.number)}</span><div><h2>${esc(d.customer || 'No customer')}</h2><div class="muted sm">${esc(projectLine(d))}</div></div></div>
+      <div class="dr-head"><span class="doorpill big">${esc(d.number)}</span><div><h2>${esc(d.customer || 'No customer')}</h2><div class="muted sm">${esc(projectLine(d))}${d.archived ? ' · Archived' : ''}</div></div></div>
       <div class="dr-due ${dueI.cls}">${esc(dueI.text)}</div>
-      ${status}${actions}${repairs}${checks}${notes}${comps}
-      <div class="dr-sec"><h3>Where it is</h3>${steps}</div>${history}`;
+      ${fieldsSec}${comments}${notes}${flow}${actions}${history}`;
     $('#app').classList.add('has-detail');
     const root = $('#detail-in');
     $('#d-close').onclick = () => { S.drawer = null; closeDetail(); };
@@ -343,11 +387,15 @@
     $$('[data-ready]', root).forEach(b => b.onclick = () => markReady(d.id, b.dataset.ready, d.number, b));
     $$('[data-unready]', root).forEach(b => b.onclick = () => act(b, () => post('ready', { id: d.id, kind: b.dataset.unready, ready: false })));
     $$('[data-repair-done]', root).forEach(b => b.onclick = () => repairDone(b.dataset.repairDone, d.number, b));
+    $$('[data-edit-field]', root).forEach(b => b.onclick = () => { const f = data.fields.find(x => String(x.id) === b.dataset.editField); window.Portal.jobs.kit.editCell(b, d, f, data); });
     $('#dr-note').onblur = e => { const v = e.target.value.trim(); if (v !== (d.notes || '')) act(null, () => post('note', { id: d.id, note: v })); };
+    $('#dr-post').onclick = () => { const t = $('#dr-comment').value.trim(); if (t) act($('#dr-post'), async () => { await post('comment', { id: d.id, text: t }); S.drawerScroll = 'comments'; }); else toast('Write something first', true); };
+    $('#dr-arch').onclick = () => act($('#dr-arch'), async () => { await post('archive', { id: d.id, on: !d.archived }); toast(d.archived ? `${d.number} is back on the board` : `${d.number} archived`); S.drawer = null; closeDetail(); });
     if ($('#dr-release')) $('#dr-release').onclick = () => releaseDoor(d.id, d.number, $('#dr-release'));
     if ($('#dr-repair')) $('#dr-repair').onclick = () => sendForRepair(d);
     if ($('#dr-undo')) $('#dr-undo').onclick = () => undoLast(d);
     if ($('#dr-wo')) $('#dr-wo').onclick = () => openWorkOrder(d);
+    if (S.drawerScroll === 'comments') { S.drawerScroll = ''; const c = $('#dr-comments'); if (c) c.scrollIntoView({ block: 'start' }); }
   }
   function evText(m, e) {
     const x = e.data || {};
@@ -362,6 +410,11 @@
       case 'component.unready': return (KIND[x.kind] || x.kind) + ' marked not ready';
       case 'check.done': return x.item + ' is in';
       case 'check.undone': return x.item + ' marked not in';
+      case 'cell.set': return `${x.name}: ${x.value || 'cleared'}`;
+      case 'comment.added': return 'Update posted';
+      case 'note.set': return 'Note changed';
+      case 'door.archived': return 'Archived';
+      case 'door.restored': return 'Brought back to the board';
       default: return e.kind;
     }
   }
@@ -390,7 +443,7 @@
   function tableHtml(name, cols, rows, groups) {
     const st = (S.sort && S.sort[name]) || {};
     const head = `<tr>${cols.map((c, i) => `<th class="${c.cls || ''}${c.sort ? ' srt' : ''}${st.i === i ? ' on' : ''}" ${c.sort ? `data-sort="${i}"` : ''}>${esc(c.label)}${st.i === i ? `<i>${st.dir > 0 ? '▲' : '▼'}</i>` : ''}</th>`).join('')}</tr>`;
-    const body = d => `<tr class="g-row${d.status === 'repair' ? ' rep' : ''}" data-id="${d.id}">${cols.map(c => { const x = cellOf(c, d); return `<td class="${c.cls || ''} ${x.cls || ''}"${x.st ? ` style="--dc:${x.st}"` : ''} ${x.attr || ''}>${x.h}</td>`; }).join('')}</tr>`;
+    const body = d => `<tr class="g-row${d.status === 'repair' ? ' rep' : ''}" data-id="${d.id}">${cols.map(c => { const x = cellOf(c, d); return `<td class="${c.cls || ''} ${x.cls || ''}"${x.st || x.style ? ` style="${[x.st ? '--dc:' + x.st : '', x.style || ''].filter(Boolean).join(';')}"` : ''} ${x.attr || ''}>${x.h}</td>`; }).join('')}</tr>`;
     const rowsHtml = groups
       ? groups.map(g => { const shut = S.shut && S.shut.has(name + g.id); return `<tr class="g-group" style="--dc:${g.color}"><td colspan="${cols.length}"><button data-group="${esc(g.id)}"><span class="car">${shut ? '▸' : '▾'}</span><b>${esc(g.title)}</b><span class="n">${g.rows.length}</span></button></td></tr>${shut ? '' : g.rows.map(body).join('')}`; }).join('')
       : rows.map(body).join('');
@@ -413,23 +466,23 @@
     $$(root + ' [data-wo]').forEach(b => b.onclick = e => { e.stopPropagation(); window.Portal.showOrder(b.dataset.wo); });
     $$(root + ' td.g-note').forEach(td => td.onclick = e => { e.stopPropagation(); editNote(td); });
   }
-  /** A note edited right in the table: click, type, Enter or click away to save, Escape to cancel. */
-  function editNote(td) {
+  /** A text edited right in the table: click, type, Enter or click away to save, Escape to cancel. `save(value)` does the saving. */
+  function editText(td, old, save, placeholder) {
     if (td.classList.contains('edit')) return;
-    const id = td.dataset.id, old = td.dataset.note || '';
     td.classList.add('edit');
-    td.innerHTML = `<input class="note-in" maxlength="500" value="${esc(old)}" placeholder="Add a note">`;
+    td.innerHTML = `<input class="note-in" maxlength="500" value="${esc(old)}" placeholder="${esc(placeholder || 'Type here')}">`;
     const inp = td.firstChild; inp.focus(); inp.select();
     let done = false;
-    const finish = async save => {
+    const finish = async doSave => {
       if (done) return; done = true;
       const v = inp.value.trim();
-      if (save && v !== old) { try { await post('note', { id, note: v }); } catch (e) { toast(e.message, true); } }
-      S.workSnap = ''; S.boardSnap = ''; refreshAll();
+      if (doSave && v !== old) { try { await save(v); } catch (e) { toast(e.message, true); } }
+      afterChange();
     };
     inp.onkeydown = e => { if (e.key === 'Enter') finish(true); else if (e.key === 'Escape') finish(false); };
     inp.onblur = () => finish(true);
   }
+  const editNote = td => editText(td, td.dataset.note || '', v => post('note', { id: td.dataset.id, note: v }), 'Add a note');
   const editing = () => !!document.querySelector('.note-in');
 
   // ---------- the order-form details each department works from ----------
@@ -492,56 +545,6 @@
     return { h: d.status === 'repair' ? 'On hold' : 'Waiting', cls: 's-wait' };
   } });
 
-  // ---------- the board ----------
-  const tabsOf = m => [{ id: 'all', label: 'All doors' }, { id: 'new', label: 'Not started' }, ...m.stages.map(st => ({ id: st.dept, label: st.dept }))];
-  async function loadBoard(force) {
-    if (!force && (editing() || (document.activeElement && document.activeElement.id === 'bd-q'))) return;          // don't redraw the page under someone who is typing
-    const m = await meta();
-    const { doors } = await api('jobs/board');
-    const snap = JSON.stringify([doors, S.boardQ, S.boardAttn, S.boardTab, S.group, S.sort, density(), S.shut && [...S.shut]]);
-    if (!force && snap === S.boardSnap) return;
-    S.boardSnap = snap; S.boardDoors = doors;
-    renderBoard(m, doors);
-  }
-  views.board = loadBoard;
-  const needsAttention = d => d.status === 'repair' || d.waitingOn.length > 0 || (due(d.shipDate).days !== null && due(d.shipDate).days < 0);
-
-  function renderBoard(m, all) {
-    const tab = S.boardTab || store.get('artema.boardtab') || 'all', tabs = tabsOf(m);
-    const cur = tabs.some(t => t.id === tab) ? tab : 'all';
-    const inTab = (d, t) => t === 'all' || (t === 'new' ? d.status === 'new' : d.status !== 'new' && d.next && d.next.dept === t);
-    const term = (S.boardQ || '').toLowerCase().trim();
-    const keep = d => (!term || [d.number, d.customer, d.project, d.notes].join(' ').toLowerCase().includes(term)) && (!S.boardAttn || needsAttention(d));
-    const rows0 = all.filter(d => inTab(d, cur) && keep(d));
-
-    let cols;
-    if (cur === 'all') cols = [doorCol, filesCol, dueCell, custCol, stageCol, nextCol, partCol('Frame', 'frame'), partCol('Panel', 'panel'), partCol('Rail & stile', 'rail_stile'), flagsCol, notesCol];
-    else if (cur === 'new') cols = [doorCol, filesCol, dueCell, custCol, partCol('Frame', 'frame'), partCol('Panel', 'panel'), partCol('Rail & stile', 'rail_stile'), flagsCol, notesCol];
-    else { const st = m.stages.find(x => x.dept === cur); cols = [doorCol, filesCol, dueCell, custCol, ...m.steps.filter(x => x.stage === st.id).map(x => stepCol(x, m)), actCol(cur, m), ...fieldCols(cur), flagsCol, notesCol]; }
-    if (!rows0.some(d => d.sourcePath)) cols = cols.filter(c => c !== filesCol);
-    const rows = sortRows('board' + cur, cols, rows0, { i: cols.indexOf(dueCell), dir: 1 });
-
-    const group = cur === 'all' && S.group !== 'none';
-    const groups = group ? [{ id: 'new', title: 'Not started', color: dcol('Office'), rows: rows.filter(d => d.status === 'new') }, ...m.stages.map(st => ({ id: st.id, title: st.dept, color: dcol(st.dept), rows: rows.filter(d => d.status !== 'new' && d.next && d.next.dept === st.dept) }))].filter(g => g.rows.length) : null;
-
-    const total = all.length, attn = all.filter(needsAttention).length;
-    const count = id => all.filter(d => inTab(d, id)).length;
-    $('#board').innerHTML = `<div class="head"><div><div class="crumbs"><button>Board</button></div><div class="sub">${total} door${total === 1 ? '' : 's'} in the shop${attn ? ` · <b class="red">${attn} need${attn === 1 ? 's' : ''} a look</b>` : ''}</div></div></div>
-      <div class="bd-tabs">${tabs.map(t => `<button class="${t.id === cur ? 'on' : ''}" data-tab="${esc(t.id)}"${t.id !== 'all' && t.id !== 'new' ? ` style="--dc:${dcol(t.id)}"` : ''}>${esc(t.label)}<span class="n">${count(t.id)}</span></button>`).join('')}</div>
-      <div class="bd-tools"><label class="search bd-search">${icon('search')}<input id="bd-q" placeholder="Find a door, customer, project or note" autocomplete="off" spellcheck="false" value="${esc(S.boardQ || '')}"></label>
-        <button class="bd-attn${S.boardAttn ? ' on' : ''}" id="bd-attn">${icon('alert')}Needs a look${attn ? ` (${attn})` : ''}</button>
-        ${cur === 'all' ? `<button class="bd-attn${group ? ' on2' : ''}" id="bd-group">Group by where it is: ${group ? 'On' : 'Off'}</button>` : ''}
-        <span class="grow"></span>${densityBar('board')}</div>
-      ${rows0.length ? tableHtml('board' + cur, cols, rows, groups) : `<div class="empty"><div class="ring">${icon('board')}</div><h3>${term || S.boardAttn ? 'Nothing matches' : 'Nothing here'}</h3><div>${term || S.boardAttn ? 'Try fewer words, or turn off “Needs a look”.' : 'Doors show up here as they move through the shop.'}</div></div>`}`;
-    $$('#board [data-tab]').forEach(b => b.onclick = () => { S.boardTab = b.dataset.tab; store.set('artema.boardtab', b.dataset.tab); S.boardSnap = ''; loadBoard(true); });
-    const inp = $('#bd-q');
-    inp.oninput = () => { S.boardQ = inp.value; S.boardSnap = ''; const pos = inp.selectionStart; loadBoard(true).then(() => { const n = $('#bd-q'); if (n) { n.focus(); n.setSelectionRange(pos, pos); } }); };
-    $('#bd-attn').onclick = () => { S.boardAttn = !S.boardAttn; S.boardSnap = ''; loadBoard(true); };
-    if ($('#bd-group')) $('#bd-group').onclick = () => { S.group = group ? 'none' : 'stage'; S.boardSnap = ''; loadBoard(true); };
-    wireDensity('board', () => { S.boardSnap = ''; loadBoard(true); });
-    wireTable('board' + cur, '#board', () => { S.boardSnap = ''; loadBoard(true); });
-  }
-
   // ---------- adding order forms to the shop ----------
   /** `rels` is a list of order-form paths, or null for every form that isn't in the shop yet. */
   async function addForms(rels) {
@@ -552,7 +555,7 @@
     const m = await meta(), def = { ...m.defaults, ...saved };
     const how = [['inhouse', 'Made here'], ['bought', 'Bought']];
     const row = (name, label, opts) => `<div class="pk-row"><div class="pk-label">${label}</div>${choiceHtml(name, opts, def[name])}</div>`;
-    const res = await modal({
+    const res = !m.guided ? {} : await modal({
       title: list.length === 1 ? `Add door ${list[0].door} to the shop` : `Add ${list.length} doors to the shop`,
       ok: list.length === 1 ? 'Add door' : 'Add doors',
       html: `<p>Where do the parts for ${list.length === 1 ? 'this door' : 'these doors'} come from? The office can change one later.</p>
@@ -562,7 +565,7 @@
       collect: el => ({ frame: chosen(el, 'frame'), panel: chosen(el, 'panel'), rail_stile: chosen(el, 'rail_stile') }),
     });
     if (!res) return;
-    store.set('artema.intake', JSON.stringify(res));
+    if (m.guided) store.set('artema.intake', JSON.stringify(res));
     try {
       if (list.length === 1) {
         const r = await post('add', { rel: list[0].rel, choices: res });
@@ -579,6 +582,8 @@
 
   // ---------- home and start ----------
   async function homeLine() {
+    const m = await meta();
+    if (!m.guided) return null;          // My work is part of the guided steps
     const d = myDept();
     if (!d) return { text: 'Choose your department', color: '#1f8f55' };
     const qd = await api('jobs/queue?dept=' + q(d));
@@ -588,9 +593,13 @@
     if (n) parts.push(`${n} to do`);
     return { text: `${d} · ${parts.length ? parts.join(', ') : 'all caught up'}`, color: dcol(d) };
   }
-  const startView = () => { paintDeptLine(); return myDept() ? 'work' : 'home'; };
+  const startView = () => { paintDeptLine(); return 'board'; };
 
-  setInterval(() => { if (S.drawer && !document.hidden && !$('#dlg').open && !$('#pick').open) drawDoor(S.drawer, false); }, 3000);
-  window.Portal.jobs = { addForms, openDoor: ref => openDoor(ref).catch(e => toast(e.message, true)), homeLine, startView };
+  setInterval(() => { if (S.drawer && !document.hidden && !$('#dlg').open && !document.querySelector('dialog.pick[open]')) drawDoor(S.drawer, false); }, 3000);
+  window.Portal.jobs = {
+    addForms, openDoor: (ref, o) => openDoor(ref, o).catch(e => toast(e.message, true)), homeLine, startView,
+    kit: { store, post, modal, choiceHtml, wireChoices, chosen, ensureDept, chooseDept, myDept, dcol, due, dueText, inkOn, density, densityBar, wireDensity, nat, both, doorCol, custCol, dueCell, filesCol, notesCol,
+      stageCol, nextCol, flagsCol, tableHtml, sortRows, wireTable, editText, editing, afterChange, meta, resetMeta, applyGuided, openDoor, act },
+  };
   paintDeptLine();
 })();
